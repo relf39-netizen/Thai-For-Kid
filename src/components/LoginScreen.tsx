@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { apiLogin } from '../services/sheetApi';
 import { UserProfile } from '../types';
-import { User, Delete, ChevronLeft, Star } from 'lucide-react';
+import { User, Delete, ChevronLeft, Star, KeyRound } from 'lucide-react';
 
 interface LoginScreenProps {
   onLogin: (user: UserProfile) => void;
@@ -35,7 +35,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
     if (result.success && result.user) {
         onLogin(result.user);
     } else {
-        setError('รหัสนักเรียนไม่ถูกต้อง ลองใหม่อีกครั้งนะ');
+        setError('รหัสนักเรียนไม่ถูกต้อง');
         setStudentId('');
     }
   };
@@ -76,94 +76,87 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
   // --------------------------------------------------------------------------
   if (mode === 'student') {
     return (
-        <div className="min-h-screen bg-gradient-to-b from-sky-100 to-white flex flex-col items-center justify-center p-4 relative overflow-hidden font-sarabun">
+        <div className="min-h-full w-full bg-gradient-to-b from-sky-50 via-white to-white flex flex-col items-center justify-center p-6 relative overflow-hidden font-sarabun animate-fade-in">
             {/* Background Decor - Thai Pattern abstract */}
             <div className="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none z-0">
-                 <div className="absolute -top-20 -left-20 w-64 h-64 bg-yellow-200 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob"></div>
-                 <div className="absolute top-0 -right-4 w-72 h-72 bg-blue-200 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob animation-delay-2000"></div>
-                 <div className="absolute -bottom-8 left-20 w-72 h-72 bg-pink-200 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob animation-delay-4000"></div>
+                 <div className="absolute -top-10 -left-10 w-48 h-48 bg-yellow-200/50 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob"></div>
+                 <div className="absolute top-10 -right-10 w-56 h-56 bg-blue-200/50 rounded-full mix-blend-multiply filter blur-xl opacity-70 animate-blob animation-delay-2000"></div>
             </div>
 
-            <div className="w-full max-w-sm bg-white/80 backdrop-blur-md rounded-[40px] shadow-[0_20px_50px_rgba(0,0,0,0.1)] p-6 border-4 border-white relative z-10">
-                
-                <div className="text-center mb-6">
-                    <div className="relative mx-auto w-28 h-28 mb-4">
+            <div className="w-full relative z-10">
+                <div className="text-center mb-8">
+                    <div className="relative mx-auto w-24 h-24 mb-4">
                         <div className="absolute inset-0 bg-yellow-400 rounded-full opacity-20 animate-pulse"></div>
-                        <div className="bg-white w-full h-full rounded-full flex items-center justify-center border-4 border-yellow-400 shadow-lg relative z-10 overflow-hidden">
-                             {/* Placeholder for Thai Cartoon */}
-                             <span className="text-6xl">🧒</span>
+                        <div className="bg-white w-full h-full rounded-full flex items-center justify-center border-4 border-yellow-400 shadow-lg relative z-10 overflow-hidden transform hover:rotate-3 transition-transform">
+                             <span className="text-5xl">🧒</span>
                         </div>
-                        <div className="absolute -bottom-2 -right-2 bg-blue-600 text-white p-2 rounded-full border-2 border-white shadow-sm z-20">
-                            <Star size={16} className="fill-current" />
+                        <div className="absolute -bottom-1 -right-1 bg-blue-600 text-white p-1.5 rounded-full border-2 border-white shadow-sm z-20">
+                            <Star size={14} className="fill-current" />
                         </div>
                     </div>
                     
-                    <h1 className="text-3xl font-bold text-blue-900 mb-1 drop-shadow-sm">ThaiQuest P.2</h1>
-                    <p className="text-blue-600 font-medium">เกมภาษาไทยแสนสนุก</p>
+                    <h1 className="text-2xl font-black text-slate-800 mb-1 tracking-tight">ThaiQuest P.2</h1>
+                    <p className="text-slate-500 font-medium text-sm">ยินดีต้อนรับคนเก่ง!</p>
                 </div>
 
                 {/* Display Dots */}
-                <div className="flex justify-center gap-3 mb-8 h-16 items-center bg-blue-50/80 rounded-2xl border-2 border-blue-100 mx-4 shadow-inner">
+                <div className="flex justify-center gap-3 mb-8 h-14 items-center bg-white rounded-2xl border border-slate-200 shadow-sm mx-4">
                     {[0, 1, 2, 3, 4].map((i) => (
                         <div key={i} className={`
-                            w-4 h-4 rounded-full transition-all duration-300
-                            ${i < studentId.length ? 'bg-yellow-400 scale-125 shadow-sm' : 'bg-gray-200'}
+                            w-3 h-3 rounded-full transition-all duration-300
+                            ${i < studentId.length ? 'bg-blue-500 scale-125' : 'bg-slate-200'}
                         `}/>
                     ))}
                 </div>
 
-                {/* Error Message */}
-                {error && (
-                    <div className="text-red-500 text-center font-bold mb-4 animate-shake bg-red-50 p-2 rounded-lg text-sm border border-red-100">
-                        {error}
-                    </div>
-                )}
-                {loading && (
-                    <div className="text-blue-600 text-center font-bold mb-4 animate-pulse flex justify-center items-center gap-2">
-                        <div className="w-2 h-2 bg-blue-600 rounded-full animate-bounce"></div>
-                        กำลังตรวจสอบ...
-                    </div>
-                )}
+                {/* Status Messages */}
+                <div className="h-8 mb-4 flex items-center justify-center">
+                    {error && (
+                        <div className="text-red-500 text-center font-bold animate-shake bg-red-50 px-3 py-1 rounded-full text-xs border border-red-100 flex items-center gap-1">
+                            <KeyRound size={12}/> {error}
+                        </div>
+                    )}
+                    {loading && (
+                        <div className="text-blue-600 text-center font-bold animate-pulse text-sm">
+                            กำลังตรวจสอบ...
+                        </div>
+                    )}
+                </div>
 
                 {/* Numeric Keypad */}
-                <div className="grid grid-cols-3 gap-4 mb-6 px-4">
+                <div className="grid grid-cols-3 gap-3 px-2 mb-8">
                     {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((num) => (
                         <button
                             key={num}
                             onClick={() => handleKeypadPress(num.toString())}
-                            className="h-16 w-16 mx-auto rounded-2xl bg-white border-b-4 border-blue-200 active:border-b-0 active:translate-y-1 shadow-lg text-2xl font-bold text-blue-800 hover:bg-blue-50 transition-all flex items-center justify-center transform hover:scale-105"
+                            className="h-16 w-full rounded-2xl bg-white border-b-[3px] border-slate-200 active:border-b-0 active:translate-y-[3px] active:bg-slate-50 text-2xl font-black text-slate-700 hover:text-blue-600 transition-all shadow-sm flex items-center justify-center"
                         >
                             {num}
                         </button>
                     ))}
-                    {/* Empty Space */}
                     <div /> 
                     <button
                         onClick={() => handleKeypadPress('0')}
-                        className="h-16 w-16 mx-auto rounded-2xl bg-white border-b-4 border-blue-200 active:border-b-0 active:translate-y-1 shadow-lg text-2xl font-bold text-blue-800 hover:bg-blue-50 transition-all flex items-center justify-center transform hover:scale-105"
+                        className="h-16 w-full rounded-2xl bg-white border-b-[3px] border-slate-200 active:border-b-0 active:translate-y-[3px] active:bg-slate-50 text-2xl font-black text-slate-700 hover:text-blue-600 transition-all shadow-sm flex items-center justify-center"
                     >
                         0
                     </button>
                     <button
                         onClick={handleBackspace}
-                        className="h-16 w-16 mx-auto rounded-2xl bg-red-50 border-b-4 border-red-200 active:border-b-0 active:translate-y-1 shadow-lg text-red-500 hover:bg-red-100 transition-all flex items-center justify-center transform hover:scale-105"
+                        className="h-16 w-full rounded-2xl bg-red-50 border-b-[3px] border-red-200 active:border-b-0 active:translate-y-[3px] active:bg-red-100 text-red-400 hover:text-red-600 transition-all shadow-sm flex items-center justify-center"
                     >
                         <Delete size={24} />
                     </button>
                 </div>
 
-                <div className="text-center mt-4 pt-4 border-t border-gray-100">
+                <div className="text-center">
                     <button 
                         onClick={() => setMode('teacher')}
-                        className="text-sm text-gray-400 hover:text-blue-600 font-medium transition-colors flex items-center justify-center gap-1 mx-auto"
+                        className="text-xs text-slate-400 hover:text-blue-600 font-bold transition-colors flex items-center justify-center gap-1 mx-auto py-2 px-4 rounded-lg hover:bg-slate-50"
                     >
-                        <User size={14} /> สำหรับคุณครู (Teacher Login)
+                        <User size={14} /> สำหรับคุณครู (Teacher)
                     </button>
                 </div>
-            </div>
-            
-            <div className="mt-4 text-center text-xs text-gray-400 font-medium">
-                © ThaiQuest P.2 - สื่อการเรียนรู้สำหรับเด็กไทย
             </div>
         </div>
     );
@@ -173,69 +166,66 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
   // RENDER: TEACHER LOGIN
   // --------------------------------------------------------------------------
   return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 font-sarabun">
-      <div className="bg-white w-full max-w-md rounded-2xl shadow-xl overflow-hidden relative border border-gray-200">
-        <div className="h-2 bg-gradient-to-r from-blue-500 via-indigo-500 to-purple-500"></div>
-        <div className="p-8">
-            <div className="text-center mb-8">
-              <div className="bg-blue-50 w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4 text-blue-600">
-                 <User size={40} />
-              </div>
-              <h1 className="text-2xl font-bold text-slate-800">
-                 ระบบจัดการคุณครู
-              </h1>
-              <p className="text-gray-500 text-sm mt-1">Teacher Management System</p>
+    <div className="min-h-full w-full bg-slate-50 flex flex-col items-center justify-center p-6 font-sarabun animate-fade-in">
+      <div className="w-full relative">
+        <div className="text-center mb-8">
+            <div className="bg-white w-16 h-16 rounded-2xl shadow-sm border border-slate-200 flex items-center justify-center mx-auto mb-4 text-slate-700">
+                <User size={32} />
+            </div>
+            <h1 className="text-xl font-black text-slate-800">
+                ระบบคุณครู
+            </h1>
+            <p className="text-slate-500 text-xs mt-1 font-medium uppercase tracking-wide">Teacher Access</p>
+        </div>
+
+        <form onSubmit={handleTeacherLogin} className="space-y-4 bg-white p-6 rounded-3xl shadow-sm border border-slate-200">
+            <div>
+            <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Username</label>
+            <input
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                className="w-full px-4 py-3 rounded-xl border-2 border-slate-100 focus:border-blue-500 outline-none transition-all bg-slate-50 text-slate-800 font-bold placeholder-slate-300"
+                placeholder="teacher"
+                />
             </div>
 
-            <form onSubmit={handleTeacherLogin} className="space-y-6">
-              <div>
-                <label className="block text-sm font-bold text-gray-700 mb-1">ชื่อผู้ใช้ (Username)</label>
-                <input
-                    type="text"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all bg-gray-50 focus:bg-white"
-                    placeholder="กรอกชื่อผู้ใช้"
-                  />
-              </div>
-
-              <div>
-                <label className="block text-sm font-bold text-gray-700 mb-1">รหัสผ่าน (Password)</label>
-                <input
-                    type="password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    className="w-full px-4 py-3 rounded-xl border border-gray-300 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all bg-gray-50 focus:bg-white"
-                    placeholder="กรอกรหัสผ่าน"
-                  />
-              </div>
-
-              {error && (
-                <div className="bg-red-50 text-red-500 p-3 rounded-lg text-sm text-center font-medium border border-red-100 flex items-center justify-center gap-2">
-                   ⚠️ {error}
-                </div>
-              )}
-
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full bg-slate-800 text-white font-bold py-3 rounded-xl shadow-lg hover:bg-slate-900 transition-all active:scale-95 disabled:opacity-70"
-              >
-                {loading ? 'กำลังเข้าสู่ระบบ...' : 'เข้าสู่ระบบ'}
-              </button>
-            </form>
-
-            <div className="text-center mt-8 pt-6 border-t border-gray-100">
-                <button 
-                    onClick={() => {
-                        setMode('student');
-                        setError('');
-                    }}
-                    className="text-sm text-blue-600 hover:text-blue-800 font-bold flex items-center justify-center gap-1 mx-auto hover:bg-blue-50 px-4 py-2 rounded-lg transition-colors"
-                >
-                    <ChevronLeft size={16} /> กลับไปหน้าจอนักเรียน
-                </button>
+            <div>
+            <label className="block text-xs font-bold text-slate-500 mb-1 uppercase">Password</label>
+            <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full px-4 py-3 rounded-xl border-2 border-slate-100 focus:border-blue-500 outline-none transition-all bg-slate-50 text-slate-800 font-bold placeholder-slate-300"
+                placeholder="••••••"
+                />
             </div>
+
+            {error && (
+            <div className="bg-red-50 text-red-500 p-3 rounded-xl text-xs text-center font-bold border border-red-100 flex items-center justify-center gap-2">
+                ⚠️ {error}
+            </div>
+            )}
+
+            <button
+            type="submit"
+            disabled={loading}
+            className="w-full bg-slate-800 text-white font-bold py-3.5 rounded-xl shadow-lg hover:bg-slate-900 transition-all active:scale-95 disabled:opacity-70 text-sm mt-2"
+            >
+            {loading ? 'กำลังเข้าสู่ระบบ...' : 'เข้าสู่ระบบ'}
+            </button>
+        </form>
+
+        <div className="text-center mt-6">
+            <button 
+                onClick={() => {
+                    setMode('student');
+                    setError('');
+                }}
+                className="text-xs text-blue-600 hover:text-blue-800 font-bold flex items-center justify-center gap-1 mx-auto hover:bg-blue-50 px-4 py-2 rounded-lg transition-colors"
+            >
+                <ChevronLeft size={14} /> กลับไปหน้าจอนักเรียน
+            </button>
         </div>
       </div>
     </div>

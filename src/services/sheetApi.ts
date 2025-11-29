@@ -1,3 +1,5 @@
+
+
 import { Exam, Question, UserProfile, UserRole, ActivityLog } from '../types';
 
 // Key for storing the Google Apps Script Web App URL
@@ -80,6 +82,8 @@ export const apiLogin = async (username: string, password: string): Promise<{ su
         };
     }
     
+    console.warn("Backend Login Failed:", data.message);
+
     // Fallback: If backend returns success: false (e.g. function missing in GAS or wrong password),
     // we allow the hardcoded teacher login specifically to help users who just updated the code
     // but haven't updated the GAS backend yet.
@@ -117,13 +121,11 @@ export const apiChangePassword = async (username: string, newPassword: string): 
 export const apiGetExams = async (): Promise<Exam[]> => {
   const url = getApiUrl();
   try {
-    // This will now call the Apps Script which joins Exams table and Questions table
     const response = await fetch(`${url}?action=get_exams&_t=${Date.now()}`, { redirect: 'follow' });
     const data = await response.json();
     return Array.isArray(data) ? data : [];
   } catch (error) {
     console.error("Failed to fetch exams", error);
-    // Removed local storage fallback to ensure we are looking at real data
     return [];
   }
 };
@@ -131,13 +133,12 @@ export const apiGetExams = async (): Promise<Exam[]> => {
 export const apiSaveExam = async (exam: Exam): Promise<boolean> => {
   const url = getApiUrl();
   try {
-    // Sends the exam and its questions array to the backend
-    // The backend script will split this into 'Exams' sheet and 'Questions' sheet
     const response = await fetch(url, postOptions({ action: 'save_exam', ...exam }));
     const data = await response.json();
     return data.success === true;
   } catch (error) {
     console.error("Failed to save exam to cloud", error);
+    // Strict requirement: Do NOT save to local storage if API fails
     return false;
   }
 };
@@ -145,7 +146,6 @@ export const apiSaveExam = async (exam: Exam): Promise<boolean> => {
 export const apiDeleteExam = async (examId: string): Promise<boolean> => {
   const url = getApiUrl();
   try {
-    // Backend script must handle deleting rows from 'Exams' and 'Questions' tables
     const response = await fetch(url, postOptions({ action: 'delete_exam', examId }));
     const data = await response.json();
     return data.success === true;
@@ -189,23 +189,25 @@ export const apiGetActivityLogs = async (): Promise<ActivityLog[]> => {
   }
 };
 
-export const apiSaveStudent = async (student: { username: string, name: string, avatar?: string }): Promise<boolean> => {
+export const apiSaveStudent = async (student: { username: string, name: string, avatar?: string }): Promise<{ success: boolean; message?: string }> => {
   const url = getApiUrl();
   try {
     const response = await fetch(url, postOptions({ action: 'save_student', ...student }));
     const text = await response.text();
     try {
         const data = JSON.parse(text);
-        if (data.success) return true;
+        if (data.success) {
+            return { success: true };
+        }
         console.error("Save student error message:", data.message);
-        return false;
+        return { success: false, message: data.message || "Server returned failure" };
     } catch (e) {
         console.error("Server return invalid JSON (Likely Error Page):", text);
-        return false;
+        return { success: false, message: "Server Error: " + text.substring(0, 50) + "..." };
     }
   } catch (error) {
     console.error("Failed to save student", error);
-    return false;
+    return { success: false, message: "Connection Error: " + error };
   }
 };
 
