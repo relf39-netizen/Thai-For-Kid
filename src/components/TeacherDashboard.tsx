@@ -1,9 +1,10 @@
+
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { TOPICS, Exam, UserProfile, ActivityLog, Question, GameType } from '../types';
 import { generateQuestions } from '../services/geminiService';
 import { apiSaveExam, apiGetExams, apiGetStudents, apiSaveStudent, apiDeleteStudent, apiGetActivityLogs, apiDeleteExam, apiChangePassword } from '../services/sheetApi';
-import { BookOpen, RefreshCw, Save, Library, Plus, Trash2, FileText, ZoomIn, ZoomOut, Home, Monitor, Users, UserPlus, Edit, Printer, X, PieChart, TrendingUp, AlertCircle, Award, CheckSquare, Square, PlusCircle, ArrowLeft, Search, Lock, Settings, ChevronRight } from 'lucide-react';
+import { BookOpen, RefreshCw, Save, Library, Plus, Trash2, FileText, ZoomIn, ZoomOut, Home, Monitor, Users, UserPlus, Edit, Printer, X, PieChart, TrendingUp, AlertCircle, Award, CheckSquare, Square, PlusCircle, ArrowLeft, Search, Lock, Settings, ChevronRight, Key, ExternalLink, Eye, EyeOff, Check } from 'lucide-react';
 
 const AVATAR_OPTIONS = ['👦', '👧', '🤓', '😎', '🦁', '🐰', '🐸', '🐼', '🦄', '🐱', '🐶', '🦊'];
 
@@ -13,10 +14,12 @@ const TeacherDashboard: React.FC = () => {
   const navigate = useNavigate();
   const [activeSection, setActiveSection] = useState<DashboardSection>('menu');
   
-  // Settings & Password
+  // Settings & Password & API Key
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [passwordForm, setPasswordForm] = useState({ newPassword: '', confirmPassword: '' });
   const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [customApiKey, setCustomApiKey] = useState('');
+  const [showApiKey, setShowApiKey] = useState(false); // Toggle password visibility
 
   // Exam State
   const [selectedTopic, setSelectedTopic] = useState(TOPICS[0]);
@@ -26,6 +29,7 @@ const TeacherDashboard: React.FC = () => {
   const [examTitle, setExamTitle] = useState('');
   const [savedExams, setSavedExams] = useState<Exam[]>([]);
   const [viewingExam, setViewingExam] = useState<Exam | null>(null);
+  const [editingExamId, setEditingExamId] = useState<string | null>(null);
   
   // Exam Deletion State
   const [showDeleteExamModal, setShowDeleteExamModal] = useState(false);
@@ -56,6 +60,9 @@ const TeacherDashboard: React.FC = () => {
 
   useEffect(() => {
     loadLibrary();
+    // Load existing API Key if saved
+    const savedKey = localStorage.getItem('THAIQUEST_GEMINI_KEY');
+    if (savedKey) setCustomApiKey(savedKey);
   }, []);
 
   useEffect(() => {
@@ -97,20 +104,29 @@ const TeacherDashboard: React.FC = () => {
     }
 
     setIsChangingPassword(true);
-    // Assuming 'teacher' is the username or retrieving from auth context in a real app
     const result = await apiChangePassword('teacher', passwordForm.newPassword);
     setIsChangingPassword(false);
 
     if (result.success) {
         alert("เปลี่ยนรหัสผ่านเรียบร้อยแล้ว");
-        setShowSettingsModal(false);
         setPasswordForm({ newPassword: '', confirmPassword: '' });
     } else {
         alert("เกิดข้อผิดพลาด: " + result.message);
     }
   };
 
-  // ... (Existing Analytics Helper Functions - Keep Logic) ...
+  const handleSaveApiKey = () => {
+    if (customApiKey.trim().length > 0 && !customApiKey.startsWith('AIza')) {
+        if(!window.confirm("API Key ดูเหมือนจะไม่ถูกต้อง (ควรขึ้นต้นด้วย AIza) คุณแน่ใจหรือไม่?")) {
+            return;
+        }
+    }
+    localStorage.setItem('THAIQUEST_GEMINI_KEY', customApiKey.trim());
+    alert("บันทึก API Key เรียบร้อยแล้ว ระบบจะใช้ Key นี้ในการสร้างโจทย์");
+    setShowSettingsModal(false);
+  };
+
+  // ... (Existing Analytics Helper Functions) ...
   const getStudentDetailedStats = () => {
     const stats: Record<string, { name: string, totalAttempts: number, maxScore: number, minScore: number, totalScore: number }> = {};
     students.forEach(s => { stats[s.username] = { name: s.name, totalAttempts: 0, maxScore: 0, minScore: 0, totalScore: 0 }; });
@@ -132,20 +148,59 @@ const TeacherDashboard: React.FC = () => {
     return students.map(s => ({ ...s, hasTaken: !!studentScores[s.username], score: studentScores[s.username]?.score || 0 })).sort((a, b) => (b.hasTaken ? 1 : 0) - (a.hasTaken ? 1 : 0));
   };
 
-  // ... (Existing Exam & Question Logic - Keep Logic) ...
+  // ... (Existing Exam & Question Logic) ...
+  const resetCreateForm = () => {
+    setGeneratedContent([]);
+    setExamTitle('');
+    setEditingExamId(null);
+    setSelectedQuestionIds(new Set());
+    setIsGenerating(false);
+    setSelectedTopic(TOPICS[0]);
+  };
+
+  const handleEditExam = (exam: Exam, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const topic = TOPICS.find(t => t.id === exam.topicId) || TOPICS[0];
+    setSelectedTopic(topic);
+    setGeneratedContent(exam.questions);
+    setSelectedQuestionIds(new Set(exam.questions.map(q => q.id)));
+    setExamTitle(exam.title);
+    setEditingExamId(exam.id);
+    setActiveSection('create');
+  };
+
   const handleGenerate = async () => {
     setIsGenerating(true);
-    const questions = await generateQuestions(selectedTopic.name, 5);
-    setGeneratedContent(questions);
-    const allIds = new Set(questions.map(q => q.id));
-    setSelectedQuestionIds(allIds);
-    setExamTitle(`แบบฝึกทักษะ: ${selectedTopic.name} (${new Date().toLocaleDateString('th-TH')})`);
-    setIsGenerating(false);
+    try {
+        const questions = await generateQuestions(selectedTopic.name, 5);
+        
+        // Check if fallback questions were returned (ID usually starts with 'f')
+        if (questions.length > 0 && questions[0].id.startsWith('f')) {
+            alert("⚠️ แจ้งเตือน: ระบบ AI ไม่สามารถสร้างโจทย์ได้ในขณะนี้\n\n1. ตรวจสอบว่าใส่ API Key ในเมนูตั้งค่า (Settings) หรือยัง\n2. API Key ของคุณอาจหมดโควต้า\n\nระบบแสดง 'โจทย์สำรอง' แทนเพื่อให้ทดสอบได้");
+        }
+
+        setGeneratedContent(questions);
+        const allIds = new Set(questions.map(q => q.id));
+        setSelectedQuestionIds(allIds);
+        if (!editingExamId) {
+            setExamTitle(`แบบฝึกทักษะ: ${selectedTopic.name} (${new Date().toLocaleDateString('th-TH')})`);
+        }
+    } catch (e) {
+        console.error("Critical error in handleGenerate", e);
+        alert("เกิดข้อผิดพลาดในการสร้างโจทย์ กรุณาลองใหม่");
+    } finally {
+        setIsGenerating(false);
+    }
   };
 
   const handleGenerateMore = async () => {
     setIsGenerating(true);
     const newQuestions = await generateQuestions(selectedTopic.name, 5);
+    
+    if (newQuestions.length > 0 && newQuestions[0].id.startsWith('f')) {
+        alert("⚠️ แจ้งเตือน: ระบบ AI ขัดข้อง (โจทย์สำรอง)");
+    }
+
     setGeneratedContent(prev => {
         const combined = [...prev, ...newQuestions];
         newQuestions.forEach(q => setSelectedQuestionIds(ids => new Set(ids).add(q.id)));
@@ -174,12 +229,39 @@ const TeacherDashboard: React.FC = () => {
     if (!examTitle.trim()) { alert("กรุณาตั้งชื่อชุดแบบฝึกทักษะ"); return; }
     const finalQuestions = generatedContent.filter(q => selectedQuestionIds.has(q.id));
     if (finalQuestions.length === 0) { alert("กรุณาเลือกข้อสอบอย่างน้อย 1 ข้อ"); return; }
-    const newExam: Exam = { id: `exam-${Date.now()}`, title: examTitle, topicId: selectedTopic.id, questions: finalQuestions, createdAt: Date.now() };
+    
+    // Logic for ID and CreatedAt
+    const examId = editingExamId || `exam-${Date.now()}`;
+    const createdAt = editingExamId 
+        ? (savedExams.find(e => e.id === editingExamId)?.createdAt || Date.now()) 
+        : Date.now();
+
+    const newExam: Exam = { 
+        id: examId, 
+        title: examTitle, 
+        topicId: selectedTopic.id, 
+        questions: finalQuestions, 
+        createdAt: createdAt
+    };
+
+    // If Editing, delete old first (simulating update)
+    if (editingExamId) {
+        const deleteSuccess = await apiDeleteExam(editingExamId);
+        if (!deleteSuccess) {
+            alert("เกิดข้อผิดพลาด: ไม่สามารถลบข้อมูลเดิมเพื่ออัปเดตได้ (Database Error)");
+            return;
+        }
+    }
+
     const success = await apiSaveExam(newExam);
     if (success) {
-        alert("✅ บันทึกแบบฝึกทักษะเรียบร้อยแล้ว!");
-        setGeneratedContent([]); setExamTitle(''); loadLibrary(); setActiveSection('library');
-    } else alert("บันทึกไม่สำเร็จ");
+        alert(editingExamId ? "✅ อัปเดตข้อมูลเรียบร้อยแล้ว!" : "✅ บันทึกแบบฝึกทักษะเรียบร้อยแล้ว!");
+        resetCreateForm();
+        loadLibrary(); 
+        setActiveSection('library');
+    } else {
+        alert("บันทึกไม่สำเร็จ");
+    }
   };
 
   const initiateDeleteExam = (exam: Exam, e: React.MouseEvent) => { e.stopPropagation(); setExamToDelete(exam); setDeletePassword(''); setShowDeleteExamModal(true); };
@@ -220,39 +302,43 @@ const TeacherDashboard: React.FC = () => {
   return (
     <div className="min-h-screen flex flex-col font-sarabun bg-slate-50 transition-all origin-top-center" style={{ zoom: zoomLevel } as any}>
         
-        {/* Navbar */}
-        <div className="bg-white border-b px-6 py-4 flex justify-between items-center sticky top-0 z-50 shadow-sm">
-            <div className="flex items-center gap-3">
-                 <button onClick={() => navigate('/')} className="p-2 bg-gray-100 hover:bg-gray-200 rounded-full text-gray-500 transition-colors">
-                    <Home size={20} />
-                 </button>
-                 <h1 className="text-xl font-bold text-gray-800">ระบบคุณครู <span className="text-blue-600 font-extrabold text-sm ml-2 bg-blue-50 px-2 py-1 rounded-md tracking-wider">THAI FOR KID</span></h1>
-            </div>
-            
-            <div className="flex items-center gap-3">
-                <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
-                    <button onClick={() => adjustZoom(-0.1)} className="p-2 hover:bg-white rounded-md transition-all"><ZoomOut size={16} /></button>
-                    <span className="text-xs font-bold text-gray-500 w-10 text-center">{Math.round(zoomLevel * 100)}%</span>
-                    <button onClick={() => adjustZoom(0.1)} className="p-2 hover:bg-white rounded-md transition-all"><ZoomIn size={16} /></button>
+        {/* Navbar - Centered Content */}
+        <div className="bg-white border-b sticky top-0 z-50 shadow-sm">
+            <div className="max-w-7xl mx-auto px-6 py-4 flex justify-between items-center w-full">
+                <div className="flex items-center gap-3">
+                     <button onClick={() => navigate('/')} className="p-2 bg-gray-100 hover:bg-gray-200 rounded-full text-gray-500 transition-colors">
+                        <Home size={20} />
+                     </button>
+                     <h1 className="text-xl font-bold text-gray-800">ระบบคุณครู <span className="text-blue-600 font-extrabold text-sm ml-2 bg-blue-50 px-2 py-1 rounded-md tracking-wider">THAI FOR KID</span></h1>
                 </div>
-                <button 
-                    onClick={() => setShowSettingsModal(true)}
-                    className="p-3 bg-white border border-gray-200 rounded-full text-gray-500 hover:text-blue-600 hover:border-blue-400 shadow-sm transition-all"
-                    title="ตั้งค่า / เปลี่ยนรหัสผ่าน"
-                >
-                    <Settings size={20} />
-                </button>
+                
+                <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+                        <button onClick={() => adjustZoom(-0.1)} className="p-2 hover:bg-white rounded-md transition-all"><ZoomOut size={16} /></button>
+                        <span className="text-xs font-bold text-gray-500 w-10 text-center">{Math.round(zoomLevel * 100)}%</span>
+                        <button onClick={() => adjustZoom(0.1)} className="p-2 hover:bg-white rounded-md transition-all"><ZoomIn size={16} /></button>
+                    </div>
+                    <button 
+                        onClick={() => setShowSettingsModal(true)}
+                        className="p-3 bg-white border border-gray-200 rounded-full text-gray-500 hover:text-blue-600 hover:border-blue-400 shadow-sm transition-all relative group"
+                        title="ตั้งค่า"
+                    >
+                        <Settings size={20} />
+                        {!customApiKey && <span className="absolute top-0 right-0 w-3 h-3 bg-red-500 rounded-full border-2 border-white animate-pulse"></span>}
+                    </button>
+                </div>
             </div>
         </div>
 
-        {/* Content Area */}
-        <div className="flex-1 p-4 md:p-8 max-w-7xl mx-auto w-full">
+        {/* Content Area - Centered */}
+        <div className="flex-1 w-full flex justify-center bg-slate-50">
+            <div className="w-full max-w-7xl p-4 md:p-8">
             
             {/* Header / Breadcrumb */}
             {activeSection !== 'menu' && (
                 <button 
-                    onClick={() => { setActiveSection('menu'); setViewingExam(null); }} 
-                    className="mb-6 flex items-center gap-2 text-gray-500 hover:text-blue-600 font-bold transition-colors bg-white px-4 py-2 rounded-xl shadow-sm border border-gray-200 w-fit"
+                    onClick={() => { setActiveSection('menu'); setViewingExam(null); resetCreateForm(); }} 
+                    className="mb-6 flex items-center gap-2 text-gray-700 hover:text-blue-600 font-bold transition-colors bg-white px-4 py-2 rounded-xl shadow-sm border border-gray-300 w-fit"
                 >
                     <ArrowLeft size={20} /> กลับสู่เมนูหลัก (Main Menu)
                 </button>
@@ -268,7 +354,7 @@ const TeacherDashboard: React.FC = () => {
 
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                         <button 
-                            onClick={() => setActiveSection('create')}
+                            onClick={() => { resetCreateForm(); setActiveSection('create'); }}
                             className="bg-white p-8 rounded-[30px] shadow-sm border-2 border-transparent hover:border-blue-500 hover:shadow-xl transition-all group text-left flex flex-col justify-between h-64 relative overflow-hidden"
                         >
                             <div className="absolute top-0 right-0 w-32 h-32 bg-blue-50 rounded-bl-[100px] -mr-8 -mt-8 group-hover:scale-110 transition-transform"></div>
@@ -326,29 +412,30 @@ const TeacherDashboard: React.FC = () => {
                 </div>
             )}
 
-            {/* 2. CREATE SECTION */}
+            {/* 2. CREATE / EDIT SECTION */}
             {activeSection === 'create' && (
                 <div className="animate-fade-in">
                      <div className="mb-6 pb-4 border-b">
                         <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-                            <Plus className="text-blue-600" /> สร้างแบบฝึกทักษะใหม่ (AI)
+                            {editingExamId ? <Edit className="text-orange-500" /> : <Plus className="text-blue-600" />} 
+                            {editingExamId ? 'แก้ไขแบบฝึกทักษะ (Edit Exam)' : 'สร้างแบบฝึกทักษะใหม่ (AI)'}
                         </h2>
                      </div>
                      <div className="grid md:grid-cols-12 gap-8">
                         {/* Logic from previous create tab */}
                         <div className="md:col-span-4 space-y-6">
                             <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm">
-                                <h3 className="font-bold text-lg mb-4 text-gray-700">1. เลือกหัวข้อ (Topic)</h3>
+                                <h3 className="font-bold text-lg mb-4 text-gray-800">1. เลือกหัวข้อ (Topic)</h3>
                                 <div className="grid grid-cols-1 gap-2 max-h-[400px] overflow-y-auto">
                                     {TOPICS.map(topic => (
-                                    <button key={topic.id} onClick={() => setSelectedTopic(topic)} className={`p-4 rounded-xl text-left transition-all flex items-center gap-3 ${selectedTopic.id === topic.id ? 'bg-blue-50 border-2 border-blue-500 text-blue-800 shadow-sm' : 'bg-gray-50 hover:bg-white text-gray-700 border-2 border-transparent'}`}>
+                                    <button key={topic.id} onClick={() => setSelectedTopic(topic)} className={`p-4 rounded-xl text-left transition-all flex items-center gap-3 ${selectedTopic.id === topic.id ? 'bg-blue-600 text-white shadow-md' : 'bg-white hover:bg-gray-100 text-gray-700 border border-gray-200'}`}>
                                         <span className="text-2xl">{topic.icon}</span>
                                         <span className="font-bold">{topic.name}</span>
                                     </button>
                                     ))}
                                 </div>
                             </div>
-                            <button onClick={handleGenerate} disabled={isGenerating} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold text-lg shadow-lg hover:shadow-blue-200 hover:-translate-y-1 transition-all disabled:opacity-70 flex justify-center items-center gap-2">
+                            <button onClick={handleGenerate} disabled={isGenerating} className="w-full py-4 bg-blue-600 text-white rounded-2xl font-bold text-lg shadow-lg hover:bg-blue-700 hover:-translate-y-1 transition-all disabled:opacity-70 flex justify-center items-center gap-2">
                                 {isGenerating ? <><RefreshCw className="animate-spin" /> กำลังสร้าง...</> : <><RefreshCw /> สร้างโจทย์ด้วย AI</>}
                             </button>
                             {generatedContent.length > 0 && (
@@ -358,44 +445,69 @@ const TeacherDashboard: React.FC = () => {
                             )}
                         </div>
 
-                        <div className="md:col-span-8 bg-white p-6 rounded-3xl border border-gray-200 shadow-sm h-fit min-h-[600px] flex flex-col">
+                        <div className="md:col-span-8 bg-gray-50 p-6 rounded-3xl border border-gray-200 shadow-inner h-fit min-h-[600px] flex flex-col">
                              <div className="flex justify-between items-center mb-4">
-                                <h3 className="font-bold text-lg text-gray-700">2. ตรวจสอบและแก้ไข</h3>
-                                {generatedContent.length > 0 && <span className="text-sm bg-blue-100 text-blue-700 px-3 py-1 rounded-full font-bold">เลือก {Array.from(selectedQuestionIds).length} / {generatedContent.length} ข้อ</span>}
+                                <h3 className="font-bold text-lg text-gray-800">2. ตรวจสอบและแก้ไข (Questions)</h3>
+                                {generatedContent.length > 0 && <span className="text-sm bg-blue-100 text-blue-800 px-3 py-1 rounded-full font-bold">เลือก {Array.from(selectedQuestionIds).length} / {generatedContent.length} ข้อ</span>}
                              </div>
                              <div className="space-y-4 flex-1 overflow-y-auto pr-2 mb-4 max-h-[500px]">
                                 {generatedContent.length === 0 ? (
-                                    <div className="text-center text-gray-400 py-20 border-2 border-dashed border-gray-200 rounded-2xl bg-gray-50 flex flex-col items-center">
-                                        <BookOpen size={40} className="mb-2 opacity-50" />
-                                        <p>เลือกหัวข้อแล้วกดสร้างเพื่อเริ่ม</p>
+                                    <div className="text-center text-gray-500 py-20 border-2 border-dashed border-gray-300 rounded-2xl bg-white flex flex-col items-center">
+                                        <BookOpen size={40} className="mb-2 opacity-50 text-gray-400" />
+                                        <p className="font-bold">เลือกหัวข้อแล้วกดปุ่มสร้างเพื่อเริ่ม</p>
                                     </div>
                                 ) : (
                                     generatedContent.map((q, idx) => (
-                                        <div key={q.id} className={`p-5 rounded-2xl border-2 transition-all ${selectedQuestionIds.has(q.id) ? 'bg-white border-blue-200 shadow-sm' : 'bg-gray-100 border-gray-200 opacity-60'}`}>
+                                        <div key={q.id} className={`p-5 rounded-2xl border-2 transition-all ${selectedQuestionIds.has(q.id) ? 'bg-white border-blue-500 shadow-md ring-2 ring-blue-100' : 'bg-white border-gray-300 opacity-60'}`}>
                                             <div className="flex gap-4">
-                                                <button onClick={() => toggleQuestionSelection(q.id)} className="mt-1">{selectedQuestionIds.has(q.id) ? <CheckSquare className="text-blue-600 w-6 h-6" /> : <Square className="text-gray-300 w-6 h-6" />}</button>
+                                                <button onClick={() => toggleQuestionSelection(q.id)} className="mt-1">
+                                                    {selectedQuestionIds.has(q.id) ? <CheckSquare className="text-blue-600 w-8 h-8 fill-blue-50" /> : <Square className="text-gray-400 w-8 h-8" />}
+                                                </button>
                                                 <div className="flex-1">
-                                                    <div className="flex justify-between">
-                                                        <p className="font-bold text-lg text-gray-800 mb-2">{idx + 1}. {q.prompt}</p>
-                                                        <button onClick={() => openEditor(q)} className="text-gray-400 hover:text-blue-600"><Edit size={18} /></button>
+                                                    <div className="flex justify-between items-start gap-4 mb-3">
+                                                        <p className="font-bold text-lg text-gray-900 leading-snug">{idx + 1}. {q.prompt}</p>
+                                                        <button 
+                                                            onClick={() => openEditor(q)} 
+                                                            className="flex items-center gap-1 px-3 py-1.5 bg-amber-100 text-amber-800 rounded-lg hover:bg-amber-200 font-bold text-sm transition-colors whitespace-nowrap shadow-sm border border-amber-200"
+                                                        >
+                                                            <Edit size={16} /> แก้ไข
+                                                        </button>
                                                     </div>
-                                                    <div className="grid grid-cols-2 gap-2 mb-2">{q.choices?.map((c, i) => <div key={i} className={`text-sm px-3 py-2 rounded-lg border ${c === q.correctAnswer ? 'bg-green-50 border-green-200 text-green-800 font-bold' : 'bg-white text-gray-600'}`}>{c}</div>)}</div>
-                                                    <p className="text-xs text-gray-500 bg-gray-50 p-2 rounded-lg inline-block">💡 {q.explanation}</p>
+                                                    <div className="grid grid-cols-2 gap-2 mb-3">
+                                                        {q.choices?.map((c, i) => (
+                                                            <div key={i} className={`text-sm px-3 py-2 rounded-lg border font-medium ${c === q.correctAnswer ? 'bg-green-100 border-green-500 text-green-900 shadow-sm' : 'bg-gray-50 border-gray-200 text-gray-700'}`}>
+                                                                {c} {c === q.correctAnswer && <Check size={14} className="inline ml-1 text-green-600"/>}
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                    <div className="bg-blue-50 p-3 rounded-lg border border-blue-100 flex gap-2">
+                                                        <span className="text-lg">💡</span>
+                                                        <p className="text-sm text-blue-900 font-medium">{q.explanation}</p>
+                                                    </div>
                                                 </div>
                                             </div>
                                         </div>
                                     ))
                                 )}
                              </div>
-                             <div className="pt-4 border-t border-gray-100 space-y-4">
-                                <button onClick={handleAddNewQuestion} className="w-full py-3 border-2 border-dashed border-gray-300 text-gray-500 rounded-xl hover:bg-gray-50 flex justify-center items-center gap-2 font-bold"><PlusCircle size={20} /> เพิ่มโจทย์เอง</button>
+                             <div className="pt-4 border-t border-gray-200 space-y-4">
+                                <button onClick={handleAddNewQuestion} className="w-full py-3 border-2 border-dashed border-gray-400 text-gray-600 rounded-xl hover:bg-white hover:border-gray-500 flex justify-center items-center gap-2 font-bold transition-all"><PlusCircle size={20} /> เพิ่มโจทย์เอง (Add Question)</button>
                                 {generatedContent.length > 0 && (
-                                    <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100 flex gap-3 items-center">
+                                    <div className="bg-blue-50 p-5 rounded-2xl border border-blue-200 flex flex-col gap-3 shadow-sm">
                                         <div className="flex-1">
-                                            <label className="block text-xs font-bold text-gray-500 mb-1 ml-1">ชื่อชุดแบบฝึกทักษะ</label>
-                                            <input type="text" value={examTitle} onChange={(e) => setExamTitle(e.target.value)} className="w-full p-3 border border-blue-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none" placeholder="เช่น แบบฝึกบทที่ 1" />
+                                            <label className="block text-sm font-bold text-blue-900 mb-1 ml-1">ตั้งชื่อชุดแบบฝึกทักษะ</label>
+                                            <input type="text" value={examTitle} onChange={(e) => setExamTitle(e.target.value)} className="w-full p-3 border-2 border-blue-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none font-bold text-gray-800" placeholder="เช่น แบบฝึกบทที่ 1 เรื่อง..." />
                                         </div>
-                                        <button onClick={handleSaveExam} className="h-12 px-6 bg-green-600 text-white rounded-xl font-bold flex items-center gap-2 hover:bg-green-700 shadow-md mt-4"><Save size={20} /> บันทึก</button>
+                                        <div className="flex gap-3 mt-2">
+                                            {editingExamId && (
+                                                <button onClick={() => { resetCreateForm(); setActiveSection('library'); }} className="flex-1 h-12 px-6 bg-white border border-gray-300 text-gray-600 rounded-xl font-bold hover:bg-gray-100">
+                                                    ยกเลิก
+                                                </button>
+                                            )}
+                                            <button onClick={handleSaveExam} className={`flex-1 h-12 px-6 ${editingExamId ? 'bg-orange-500 hover:bg-orange-600' : 'bg-green-600 hover:bg-green-700'} text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-md transition-colors`}>
+                                                <Save size={20} /> {editingExamId ? 'บันทึกการแก้ไข' : 'บันทึกเข้าระบบ'}
+                                            </button>
+                                        </div>
                                     </div>
                                 )}
                             </div>
@@ -414,7 +526,7 @@ const TeacherDashboard: React.FC = () => {
                      </div>
                      
                      {viewingExam ? (
-                        // Detail View Code (Same logic as before, cleaner UI)
+                        // Detail View Code
                         <div className="animate-scale-up">
                             <button onClick={() => setViewingExam(null)} className="mb-4 text-sm font-bold text-gray-500 hover:text-blue-600 flex items-center gap-1"><ArrowLeft size={16}/> ย้อนกลับ</button>
                             <div className="bg-white p-6 rounded-3xl shadow-sm border border-gray-200 mb-6">
@@ -426,7 +538,7 @@ const TeacherDashboard: React.FC = () => {
                                     {viewingExam.questions.map((q, idx) => (
                                         <div key={idx} className="bg-white p-5 rounded-2xl border border-gray-200">
                                             <p className="font-bold text-gray-800 mb-2">{idx+1}. {q.prompt}</p>
-                                            <div className="flex flex-wrap gap-2">{q.choices?.map((c,i) => <span key={i} className={`px-3 py-1 rounded-lg text-sm ${c===q.correctAnswer ? 'bg-green-100 text-green-800 font-bold' : 'bg-gray-100'}`}>{c}</span>)}</div>
+                                            <div className="flex flex-wrap gap-2">{q.choices?.map((c,i) => <span key={i} className={`px-3 py-1 rounded-lg text-sm border ${c===q.correctAnswer ? 'bg-green-100 border-green-200 text-green-900 font-bold' : 'bg-gray-50 border-gray-200 text-gray-700'}`}>{c}</span>)}</div>
                                         </div>
                                     ))}
                                 </div>
@@ -448,13 +560,20 @@ const TeacherDashboard: React.FC = () => {
                             {savedExams.map(exam => (
                                 <div key={exam.id} onClick={() => setViewingExam(exam)} className="bg-white p-6 rounded-[24px] shadow-sm border border-gray-200 hover:shadow-lg hover:border-blue-300 transition-all cursor-pointer group flex flex-col justify-between h-48 relative">
                                     <div>
-                                        <div className="flex justify-between mb-3"><div className="bg-blue-50 text-blue-600 p-2 rounded-xl"><FileText size={20} /></div><span className="text-xs bg-gray-100 text-gray-500 px-2 py-1 rounded-lg">{new Date(exam.createdAt).toLocaleDateString('th-TH')}</span></div>
-                                        <h3 className="font-bold text-lg text-gray-800 line-clamp-2 group-hover:text-blue-600">{exam.title}</h3>
-                                        <p className="text-sm text-gray-400 mt-1">{exam.questions.length} ข้อคำถาม</p>
+                                        <div className="flex justify-between mb-3"><div className="bg-blue-50 text-blue-600 p-2 rounded-xl"><FileText size={20} /></div><span className="text-xs bg-gray-100 text-gray-600 font-medium px-2 py-1 rounded-lg">{new Date(exam.createdAt).toLocaleDateString('th-TH')}</span></div>
+                                        <h3 className="font-bold text-lg text-gray-900 line-clamp-2 group-hover:text-blue-600">{exam.title}</h3>
+                                        <p className="text-sm text-gray-500 mt-1">{exam.questions.length} ข้อคำถาม</p>
                                     </div>
-                                    <div className="flex justify-between items-center mt-4 pt-4 border-t border-gray-100">
-                                        <span className="text-xs font-bold text-blue-500 flex items-center gap-1">ดูรายละเอียด <ChevronRight size={14}/></span>
-                                        <button onClick={(e) => initiateDeleteExam(exam, e)} className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"><Trash2 size={18}/></button>
+                                    <div className="flex justify-between items-center mt-4 pt-4 border-t border-gray-100 gap-2">
+                                        <span className="text-xs font-bold text-blue-600 flex items-center gap-1 flex-1">ดูรายละเอียด <ChevronRight size={14}/></span>
+                                        <div className="flex gap-2">
+                                            <button onClick={(e) => handleEditExam(exam, e)} className="px-3 py-1.5 bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 rounded-lg transition-colors font-bold text-xs flex items-center gap-1" title="แก้ไข">
+                                                <Edit size={14}/> แก้ไข
+                                            </button>
+                                            <button onClick={(e) => initiateDeleteExam(exam, e)} className="px-3 py-1.5 bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 rounded-lg transition-colors font-bold text-xs flex items-center gap-1" title="ลบ">
+                                                <Trash2 size={14}/> ลบ
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                             ))}
@@ -463,7 +582,7 @@ const TeacherDashboard: React.FC = () => {
                 </div>
             )}
 
-            {/* 4. STUDENTS & 5. STATS (Simplified View reuse) */}
+            {/* 4. STUDENTS & 5. STATS */}
             {(activeSection === 'students' || activeSection === 'stats') && (
                 <div className="animate-fade-in">
                     <div className="mb-6 pb-4 border-b flex justify-between items-center">
@@ -473,21 +592,20 @@ const TeacherDashboard: React.FC = () => {
                         {activeSection === 'students' && <button onClick={() => { setStudentForm({ username: '', name: '', avatar: '👦' }); generateStudentId(); setShowStudentModal(true); }} className="bg-green-600 text-white px-4 py-2 rounded-xl font-bold shadow-md hover:bg-green-700 flex items-center gap-2"><UserPlus size={18}/> เพิ่มนักเรียน</button>}
                     </div>
                     
-                    {/* Reuse Stats/Student Tables from original code but wrapped cleanly */}
                     {activeSection === 'students' ? (
                         <div className="bg-white rounded-3xl shadow-sm border border-gray-200 overflow-hidden">
                             <table className="w-full text-left">
-                                <thead className="bg-gray-50 border-b border-gray-100"><tr><th className="p-4 font-bold text-gray-500">นร.</th><th className="p-4 font-bold text-gray-500">รหัส</th><th className="p-4 font-bold text-gray-500">ชื่อ</th><th className="p-4 font-bold text-gray-500">XP</th><th className="p-4 font-bold text-gray-500 text-right">Action</th></tr></thead>
-                                <tbody className="divide-y divide-gray-50">{students.map(s => (<tr key={s.username} className="hover:bg-blue-50"><td className="p-4 text-2xl">{s.avatar}</td><td className="p-4 font-mono font-bold text-blue-600">{s.username}</td><td className="p-4 font-bold text-gray-700">{s.name}</td><td className="p-4 text-gray-500">{s.xp}</td><td className="p-4 flex justify-end gap-2"><button onClick={() => {setCardStudent(s); setShowCardModal(true)}} className="p-2 bg-indigo-50 text-indigo-600 rounded-lg"><Printer size={16}/></button><button onClick={() => handleEditStudent(s)} className="p-2 bg-blue-50 text-blue-600 rounded-lg"><Edit size={16}/></button><button onClick={() => handleDeleteStudent(s.username)} className="p-2 bg-red-50 text-red-600 rounded-lg"><Trash2 size={16}/></button></td></tr>))}</tbody>
+                                <thead className="bg-gray-50 border-b border-gray-100"><tr><th className="p-4 font-bold text-gray-600">นร.</th><th className="p-4 font-bold text-gray-600">รหัส</th><th className="p-4 font-bold text-gray-600">ชื่อ</th><th className="p-4 font-bold text-gray-600">XP</th><th className="p-4 font-bold text-gray-600 text-right">Action</th></tr></thead>
+                                <tbody className="divide-y divide-gray-50">{students.map(s => (<tr key={s.username} className="hover:bg-blue-50"><td className="p-4 text-2xl">{s.avatar}</td><td className="p-4 font-mono font-bold text-blue-600">{s.username}</td><td className="p-4 font-bold text-gray-700">{s.name}</td><td className="p-4 text-gray-600 font-medium">{s.xp}</td><td className="p-4 flex justify-end gap-2"><button onClick={() => {setCardStudent(s); setShowCardModal(true)}} className="p-2 bg-indigo-50 text-indigo-600 rounded-lg"><Printer size={16}/></button><button onClick={() => handleEditStudent(s)} className="p-2 bg-blue-50 text-blue-600 rounded-lg"><Edit size={16}/></button><button onClick={() => handleDeleteStudent(s.username)} className="p-2 bg-red-50 text-red-600 rounded-lg"><Trash2 size={16}/></button></td></tr>))}</tbody>
                             </table>
                         </div>
                     ) : (
                         <div className="space-y-6">
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200"><p className="text-gray-400 text-xs uppercase font-bold">Total Attempts</p><p className="text-3xl font-bold text-blue-600">{activityLogs.length}</p></div>
-                                <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200"><p className="text-gray-400 text-xs uppercase font-bold">Students</p><p className="text-3xl font-bold text-orange-600">{students.length}</p></div>
-                                <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200"><p className="text-gray-400 text-xs uppercase font-bold">Avg Score</p><p className="text-3xl font-bold text-green-600">{activityLogs.length > 0 ? Math.round(activityLogs.reduce((a, b) => a + b.score, 0) / activityLogs.length) : 0}</p></div>
-                                <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200"><p className="text-gray-400 text-xs uppercase font-bold">Exams</p><p className="text-3xl font-bold text-purple-600">{savedExams.length}</p></div>
+                                <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200"><p className="text-gray-500 text-xs uppercase font-bold">Total Attempts</p><p className="text-3xl font-bold text-blue-600">{activityLogs.length}</p></div>
+                                <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200"><p className="text-gray-500 text-xs uppercase font-bold">Students</p><p className="text-3xl font-bold text-orange-600">{students.length}</p></div>
+                                <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200"><p className="text-gray-500 text-xs uppercase font-bold">Avg Score</p><p className="text-3xl font-bold text-green-600">{activityLogs.length > 0 ? Math.round(activityLogs.reduce((a, b) => a + b.score, 0) / activityLogs.length) : 0}</p></div>
+                                <div className="bg-white p-5 rounded-2xl shadow-sm border border-gray-200"><p className="text-gray-500 text-xs uppercase font-bold">Exams</p><p className="text-3xl font-bold text-purple-600">{savedExams.length}</p></div>
                             </div>
                             <div className="bg-white rounded-3xl shadow-sm border border-gray-200 overflow-hidden">
                                 <div className="p-4 bg-gray-50 border-b border-gray-200 font-bold text-gray-700">ผลการเรียนรายบุคคล</div>
@@ -502,65 +620,113 @@ const TeacherDashboard: React.FC = () => {
                     )}
                 </div>
             )}
+            
+            </div>
         </div>
 
-        {/* ======================= SETTINGS MODAL (CHANGE PASSWORD) ======================= */}
+        {/* ======================= SETTINGS MODAL ======================= */}
         {showSettingsModal && (
             <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[100] backdrop-blur-sm p-4">
-                <div className="bg-white rounded-3xl p-8 w-full max-w-sm shadow-2xl relative animate-scale-up">
+                <div className="bg-white rounded-3xl p-8 w-full max-w-sm shadow-2xl relative animate-scale-up max-h-[90vh] overflow-y-auto">
                     <button onClick={() => setShowSettingsModal(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"><X /></button>
-                    
-                    <h3 className="text-xl font-bold mb-6 text-gray-800 flex items-center gap-2">
-                        <Settings className="text-gray-600" /> ตั้งค่าบัญชี
-                    </h3>
-
-                    <div className="space-y-4">
-                        <div>
-                            <label className="block text-sm font-bold text-gray-700 mb-1">เปลี่ยนรหัสผ่านครู</label>
-                            <input 
-                                type="password" 
-                                value={passwordForm.newPassword} 
-                                onChange={(e) => setPasswordForm({...passwordForm, newPassword: e.target.value})}
-                                className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 outline-none transition-all"
-                                placeholder="รหัสผ่านใหม่"
-                            />
-                        </div>
-                        <div>
-                            <input 
-                                type="password" 
-                                value={passwordForm.confirmPassword} 
-                                onChange={(e) => setPasswordForm({...passwordForm, confirmPassword: e.target.value})}
-                                className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 outline-none transition-all"
-                                placeholder="ยืนยันรหัสผ่านใหม่"
-                            />
-                        </div>
-                        <button 
-                            onClick={handleChangePassword}
-                            disabled={isChangingPassword}
-                            className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold shadow-lg hover:bg-blue-700 mt-2 transition-all"
-                        >
-                            {isChangingPassword ? "กำลังบันทึก..." : "บันทึกรหัสผ่านใหม่"}
-                        </button>
+                    <h3 className="text-xl font-bold mb-6 text-gray-800 flex items-center gap-2"><Settings className="text-gray-600" /> ตั้งค่าระบบ</h3>
+                    <div className="mb-8 p-5 bg-blue-50 rounded-2xl border border-blue-100">
+                         <h4 className="font-bold text-blue-800 mb-3 flex items-center gap-2 text-sm uppercase"><Key size={14} /> Gemini API Key</h4>
+                         <div className="mb-4">
+                            <p className="text-xs text-blue-600 mb-1 font-bold">1. ขอรับ API Key (ฟรี)</p>
+                            <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="flex items-center justify-center gap-2 w-full py-2 bg-white border border-blue-200 text-blue-600 rounded-lg text-sm font-bold hover:bg-blue-100 transition-colors"><ExternalLink size={14} /> ไปที่ Google AI Studio</a>
+                         </div>
+                         <div>
+                            <p className="text-xs text-blue-600 mb-1 font-bold">2. นำ Key มาวางที่นี่</p>
+                            <div className="relative">
+                                <input type={showApiKey ? "text" : "password"} value={customApiKey} onChange={(e) => setCustomApiKey(e.target.value)} className="w-full p-2 pr-10 border border-blue-200 rounded-lg text-sm bg-white focus:ring-2 focus:ring-blue-400 outline-none" placeholder="วาง AIzaSy... ที่นี่" />
+                                <button onClick={() => setShowApiKey(!showApiKey)} className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-blue-600">{showApiKey ? <EyeOff size={16} /> : <Eye size={16} />}</button>
+                            </div>
+                         </div>
+                         <button onClick={handleSaveApiKey} className="mt-3 text-xs bg-blue-600 text-white px-3 py-2 rounded-lg font-bold w-full hover:bg-blue-700 transition-colors shadow-sm">บันทึก API Key</button>
+                    </div>
+                    <div className="space-y-4 pt-4 border-t border-gray-100">
+                         <h4 className="font-bold text-gray-700 text-sm uppercase flex items-center gap-2"><Lock size={14} /> เปลี่ยนรหัสผ่านครู</h4>
+                        <div><input type="password" value={passwordForm.newPassword} onChange={(e) => setPasswordForm({...passwordForm, newPassword: e.target.value})} className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 outline-none transition-all text-sm" placeholder="รหัสผ่านใหม่" /></div>
+                        <div><input type="password" value={passwordForm.confirmPassword} onChange={(e) => setPasswordForm({...passwordForm, confirmPassword: e.target.value})} className="w-full p-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 outline-none transition-all text-sm" placeholder="ยืนยันรหัสผ่านใหม่" /></div>
+                        <button onClick={handleChangePassword} disabled={isChangingPassword} className="w-full py-3 bg-gray-800 text-white rounded-xl font-bold shadow-lg hover:bg-black mt-2 transition-all text-sm">{isChangingPassword ? "กำลังบันทึก..." : "เปลี่ยนรหัสผ่าน"}</button>
                     </div>
                 </div>
             </div>
         )}
 
-        {/* ... (Keep existing modals: DeleteExam, EditQuestion, StudentModal, CardModal - No changes to logic, just assumed present or tiny styling tweaks if needed) ... */}
-        {/* Re-implementing them briefly to ensure the file is complete */}
-        
+        {/* ======================= DELETE MODAL ======================= */}
         {showDeleteExamModal && examToDelete && (
-            <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[110] backdrop-blur-sm p-4"><div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl relative animate-scale-up"><button onClick={() => setShowDeleteExamModal(false)} className="absolute top-4 right-4 text-gray-400"><X /></button><div className="text-center mb-6"><div className="bg-red-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4"><Trash2 size={32} className="text-red-500" /></div><h3 className="text-xl font-bold text-gray-800">ลบแบบฝึกทักษะ?</h3><p className="text-gray-500 mt-2">"{examToDelete.title}"</p></div><input type="password" value={deletePassword} onChange={(e) => setDeletePassword(e.target.value)} className="w-full p-3 border-2 border-gray-200 rounded-xl mb-4 text-center" placeholder="รหัสยืนยัน (1234)" /><div className="flex gap-3"><button onClick={() => setShowDeleteExamModal(false)} className="flex-1 py-3 bg-gray-100 rounded-xl font-bold text-gray-600">ยกเลิก</button><button onClick={confirmDeleteExam} disabled={isDeletingExam} className="flex-1 py-3 bg-red-500 text-white rounded-xl font-bold">{isDeletingExam ? '...' : 'ลบ'}</button></div></div></div>
+            <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[110] backdrop-blur-sm p-4"><div className="bg-white rounded-3xl p-6 w-full max-w-sm shadow-2xl relative animate-scale-up"><button onClick={() => setShowDeleteExamModal(false)} className="absolute top-4 right-4 text-gray-400"><X /></button><div className="text-center mb-6"><div className="bg-red-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4"><Trash2 size={32} className="text-red-500" /></div><h3 className="text-xl font-bold text-gray-800">ลบแบบฝึกทักษะ?</h3><p className="text-gray-500 mt-2">"{examToDelete.title}"</p></div><input type="password" value={deletePassword} onChange={(e) => setDeletePassword(e.target.value)} className="w-full p-3 border-2 border-gray-200 rounded-xl mb-4 text-center font-bold text-gray-800" placeholder="รหัสยืนยัน (1234)" /><div className="flex gap-3"><button onClick={() => setShowDeleteExamModal(false)} className="flex-1 py-3 bg-gray-100 rounded-xl font-bold text-gray-600 hover:bg-gray-200">ยกเลิก</button><button onClick={confirmDeleteExam} disabled={isDeletingExam} className="flex-1 py-3 bg-red-500 text-white rounded-xl font-bold hover:bg-red-600">{isDeletingExam ? '...' : 'ลบ'}</button></div></div></div>
         )}
         
+        {/* ======================= EDIT QUESTION MODAL (High Contrast Update) ======================= */}
         {showEditModal && editingQuestion && (
-            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] backdrop-blur-sm p-4"><div className="bg-white rounded-3xl p-6 w-full max-w-2xl shadow-2xl"><h3 className="font-bold mb-4">แก้ไขโจทย์</h3><input type="text" value={editingQuestion.prompt} onChange={(e) => setEditingQuestion({...editingQuestion, prompt: e.target.value})} className="w-full p-3 border rounded-xl mb-4" /><div className="grid grid-cols-2 gap-4 mb-4">{editingQuestion.choices?.map((c,i) => <div key={i}><input type="text" value={c} onChange={(e) => {const nc=[...(editingQuestion.choices||[])]; nc[i]=e.target.value; setEditingQuestion({...editingQuestion, choices: nc, correctAnswer: editingQuestion.correctAnswer===c?e.target.value:editingQuestion.correctAnswer})}} className={`w-full p-2 border rounded-lg ${editingQuestion.correctAnswer===c?'border-green-500 bg-green-50':''}`} /> <button onClick={() => setEditingQuestion({...editingQuestion, correctAnswer: c})} className="text-xs text-blue-500 mt-1">ตั้งเป็นเฉลย</button></div>)}</div><textarea value={editingQuestion.explanation} onChange={(e) => setEditingQuestion({...editingQuestion, explanation: e.target.value})} className="w-full p-3 border rounded-xl h-24 mb-4" /><div className="flex justify-end gap-2"><button onClick={() => setShowEditModal(false)} className="px-4 py-2 text-gray-500">ยกเลิก</button><button onClick={saveEditedQuestion} className="px-4 py-2 bg-blue-600 text-white rounded-lg">บันทึก</button></div></div></div>
+            <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[100] backdrop-blur-sm p-4">
+                <div className="bg-white rounded-3xl p-6 w-full max-w-2xl shadow-2xl animate-fade-in relative border-4 border-white">
+                    <button onClick={() => setShowEditModal(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-700"><X /></button>
+                    
+                    <h3 className="font-bold text-xl mb-4 text-gray-900 border-b pb-2 flex items-center gap-2">
+                        <Edit className="text-blue-600"/> แก้ไขโจทย์ (Edit Question)
+                    </h3>
+                    
+                    <div className="mb-4">
+                        <label className="block text-sm font-bold text-gray-700 mb-1">โจทย์คำถาม</label>
+                        <input 
+                            type="text" 
+                            value={editingQuestion.prompt} 
+                            onChange={(e) => setEditingQuestion({...editingQuestion, prompt: e.target.value})} 
+                            className="w-full p-3 border-2 border-gray-300 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none font-bold text-gray-800 bg-white" 
+                        />
+                    </div>
+                    
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                        {editingQuestion.choices?.map((c, i) => (
+                            <div key={i} className="bg-gray-50 p-3 rounded-xl border border-gray-200">
+                                <label className="block text-xs font-bold text-gray-500 mb-1">ตัวเลือกที่ {i+1}</label>
+                                <div className="flex gap-2">
+                                    <input 
+                                        type="text" 
+                                        value={c} 
+                                        onChange={(e) => {
+                                            const nc=[...(editingQuestion.choices||[])]; 
+                                            nc[i]=e.target.value; 
+                                            // update correct answer if text changes
+                                            const newCorrect = editingQuestion.correctAnswer===c ? e.target.value : editingQuestion.correctAnswer;
+                                            setEditingQuestion({...editingQuestion, choices: nc, correctAnswer: newCorrect})
+                                        }} 
+                                        className={`w-full p-2 border-2 rounded-lg font-medium text-gray-800 outline-none focus:border-blue-400 ${editingQuestion.correctAnswer===c ? 'border-green-500 bg-green-50' : 'border-gray-300 bg-white'}`} 
+                                    />
+                                    <button 
+                                        onClick={() => setEditingQuestion({...editingQuestion, correctAnswer: c})} 
+                                        className={`p-2 rounded-lg transition-all ${editingQuestion.correctAnswer===c ? 'bg-green-500 text-white shadow-md' : 'bg-gray-200 text-gray-400 hover:bg-gray-300'}`}
+                                        title="ตั้งเป็นคำตอบที่ถูก"
+                                    >
+                                        <Check size={18} />
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                    
+                    <div className="mb-6">
+                         <label className="block text-sm font-bold text-gray-700 mb-1">คำอธิบายเฉลย (Explanation)</label>
+                        <textarea 
+                            value={editingQuestion.explanation} 
+                            onChange={(e) => setEditingQuestion({...editingQuestion, explanation: e.target.value})} 
+                            className="w-full p-3 border-2 border-gray-300 rounded-xl h-20 outline-none focus:ring-2 focus:ring-blue-500 text-gray-700 bg-white" 
+                        />
+                    </div>
+                    
+                    <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+                        <button onClick={() => setShowEditModal(false)} className="px-6 py-3 text-gray-700 bg-gray-100 hover:bg-gray-200 font-bold rounded-xl transition-colors">ยกเลิก</button>
+                        <button onClick={saveEditedQuestion} className="px-6 py-3 bg-blue-600 text-white rounded-xl font-bold shadow-md hover:bg-blue-700 transition-all flex items-center gap-2"><Save size={18}/> บันทึกการแก้ไข</button>
+                    </div>
+                </div>
+            </div>
         )}
 
-        {showStudentModal && (
-            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[100] backdrop-blur-sm p-4"><div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl relative"><button onClick={() => setShowStudentModal(false)} className="absolute top-4 right-4 text-gray-400"><X /></button><h3 className="text-xl font-bold mb-4">ข้อมูลนักเรียน</h3><div className="space-y-4"><div><label className="text-sm font-bold block mb-1">Avatar</label><div className="flex gap-2 flex-wrap">{AVATAR_OPTIONS.map(a => <button key={a} onClick={() => setStudentForm({...studentForm, avatar: a})} className={`text-2xl p-1 rounded border-2 ${studentForm.avatar===a?'border-blue-500 bg-blue-50': 'border-transparent'}`}>{a}</button>)}</div></div><input type="text" value={studentForm.name} onChange={(e) => setStudentForm({...studentForm, name: e.target.value})} className="w-full p-3 border rounded-xl" placeholder="ชื่อ-นามสกุล" /><div className="flex gap-2"><input type="text" value={studentForm.username} readOnly className="flex-1 p-3 bg-gray-100 rounded-xl text-center font-bold" /><button onClick={generateStudentId} className="p-3 bg-gray-200 rounded-xl"><RefreshCw/></button></div><button onClick={handleSaveStudent} disabled={isSavingStudent} className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold mt-2">{isSavingStudent?'...':'บันทึก'}</button></div></div></div>
-        )}
-
+        {/* Print Modal */}
         {showCardModal && cardStudent && (
              <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[100] backdrop-blur-sm p-4"><div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl relative overflow-hidden"><div className="p-4 border-b flex justify-between"><h3 className="font-bold">พิมพ์บัตร</h3><button onClick={() => setShowCardModal(false)}><X/></button></div><div className="p-8 bg-gray-100 flex justify-center"><div id="printable-card" className="w-[350px] h-[220px] bg-white rounded-2xl shadow-xl border border-gray-300 overflow-hidden relative flex flex-col items-center justify-center text-center p-4"><div className="absolute top-0 left-0 w-full h-4 bg-gradient-to-r from-blue-500 via-cyan-400 to-blue-500"></div><div className="bg-blue-50 w-20 h-20 flex items-center justify-center rounded-full mb-2 border-4 border-blue-100 text-5xl">{cardStudent.avatar || '👦'}</div><h2 className="text-xl font-bold text-gray-800 mb-1">บัตรประจำตัวนักเรียน</h2><div className="w-full bg-slate-50 py-2 px-3 border border-dashed border-gray-300 rounded-lg mb-2"><p className="text-2xl font-mono font-black text-slate-800 tracking-[0.2em]">{cardStudent.username}</p></div><p className="font-bold text-lg text-blue-700 truncate w-full px-2">{cardStudent.name}</p></div></div><div className="p-4 border-t flex justify-end"><button onClick={handlePrintCard} className="px-6 py-2 bg-blue-600 text-white rounded-lg font-bold">พิมพ์</button></div></div></div>
         )}

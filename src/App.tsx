@@ -1,20 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import { HashRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
-import { UserProfile, TOPICS, Question, Exam } from './types';
+import { UserProfile, TOPICS, Question, Exam, ActivityLog } from './types';
 import { generateQuestions } from './services/geminiService';
-import { apiGetExams, apiSaveScore } from './services/sheetApi';
+import { apiGetExams, apiSaveScore, apiGetActivityLogs } from './services/sheetApi';
 import GameScreen from './components/GameScreen';
 import TeacherDashboard from './components/TeacherDashboard';
 import LoginScreen from './components/LoginScreen';
-import { GraduationCap, Play, Star, User, Book, LogOut, ChevronRight } from 'lucide-react';
+import { GraduationCap, Play, Star, User, Book, LogOut, ChevronRight, Trophy, BarChart2 } from 'lucide-react';
 
 interface HomeScreenProps {
   user: UserProfile;
   onStartGame: (topicId: string, customQuestions?: Question[], examId?: string) => Promise<void>;
   onLogout: () => void;
+  activeTab: string;
+  setActiveTab: (tab: string) => void;
+  logs: ActivityLog[];
 }
 
-const HomeScreen: React.FC<HomeScreenProps> = ({ user, onStartGame, onLogout }) => {
+const HomeScreen: React.FC<HomeScreenProps> = ({ user, onStartGame, onLogout, activeTab, setActiveTab, logs }) => {
   const navigate = useNavigate();
   const [loadingTopic, setLoadingTopic] = useState<string | null>(null);
   const [savedExams, setSavedExams] = useState<Exam[]>([]);
@@ -28,9 +31,39 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ user, onStartGame, onLogout }) 
     loadExams();
   }, []);
 
-  const handleTopicClick = async (topicId: string) => {
-    setLoadingTopic(topicId);
-    await onStartGame(topicId); // Regular Practice
+  const handleTopicClick = async (topicName: string) => {
+    setLoadingTopic(topicName);
+    
+    // 1. Try to find questions in local database (savedExams)
+    const topicObj = TOPICS.find(t => t.name === topicName);
+    let dbQuestions: Question[] = [];
+
+    if (topicObj && savedExams.length > 0) {
+        // Filter exams matching this topic
+        const matchingExams = savedExams.filter(e => e.topicId === topicObj.id);
+        
+        // Flatten all questions from these exams into one pool
+        matchingExams.forEach(exam => {
+            if (exam.questions && Array.isArray(exam.questions)) {
+                dbQuestions.push(...exam.questions);
+            }
+        });
+    }
+
+    if (dbQuestions.length > 0) {
+        // 2. If found, shuffle and take 5 (Random Selection)
+        const shuffled = dbQuestions.sort(() => 0.5 - Math.random());
+        const selected = shuffled.slice(0, 5);
+        console.log(`Using ${selected.length} questions from database for topic: ${topicName}`);
+        
+        // Start game with DB questions
+        await onStartGame(topicName, selected);
+    } else {
+        // 3. If not found, use AI (fallback)
+        console.log(`No questions in database for ${topicName}, falling back to AI.`);
+        await onStartGame(topicName);
+    }
+
     setLoadingTopic(null);
   };
 
@@ -40,6 +73,94 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ user, onStartGame, onLogout }) 
     setLoadingTopic(null);
   }
 
+  // Filter out exams that are already completed by this user
+  // We check if there's a log with "Homework: [ExamTitle]"
+  const availableExams = savedExams.filter(exam => {
+     const isCompleted = logs.some(log => 
+        log.username === user.username && 
+        (log.details === `Homework: ${exam.title}`)
+     );
+     return !isCompleted;
+  });
+
+  // Calculate Stats for Profile
+  const myHomeworkLogs = logs.filter(l => l.username === user.username && l.details.startsWith("Homework:"));
+  const myPracticeLogs = logs.filter(l => l.username === user.username && l.details.startsWith("Practice:"));
+
+  // =========================================================================================
+  // VIEW: PROFILE (ME)
+  // =========================================================================================
+  if (activeTab === 'profile') {
+      return (
+        <div className="pb-24 font-sarabun">
+            <div className="bg-blue-600 text-white p-6 rounded-b-[40px] shadow-lg mb-6 relative overflow-hidden">
+                <div className="absolute top-0 right-0 p-4 opacity-10"><User size={150} /></div>
+                <div className="flex flex-col items-center relative z-10 pt-4">
+                    <div className="w-24 h-24 bg-white rounded-full flex items-center justify-center text-6xl shadow-xl border-4 border-blue-200 mb-3">
+                        {user.avatar || '👦'}
+                    </div>
+                    <h1 className="text-2xl font-bold">{user.name}</h1>
+                    <p className="opacity-80">รหัส: {user.username}</p>
+                </div>
+            </div>
+
+            <div className="px-6 space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-col items-center">
+                        <div className="bg-yellow-100 p-2 rounded-full text-yellow-600 mb-2"><Trophy size={24} /></div>
+                        <h3 className="text-2xl font-bold text-gray-800">{user.xp}</h3>
+                        <p className="text-xs text-gray-500">คะแนนรวม XP</p>
+                    </div>
+                    <div className="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 flex flex-col items-center">
+                        <div className="bg-orange-100 p-2 rounded-full text-orange-600 mb-2"><Star size={24} /></div>
+                        <h3 className="text-2xl font-bold text-gray-800">{user.streak}</h3>
+                        <p className="text-xs text-gray-500">ไฟต่อเนื่อง</p>
+                    </div>
+                </div>
+
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                    <div className="p-4 border-b bg-gray-50 font-bold text-gray-700 flex items-center gap-2">
+                        <Book size={18} /> ผลการเรียน (My Stats)
+                    </div>
+                    <div className="p-4 space-y-4">
+                         <div>
+                            <div className="flex justify-between text-sm mb-1">
+                                <span className="text-gray-600">แบบฝึกทักษะจากครู</span>
+                                <span className="font-bold text-blue-600">{myHomeworkLogs.length} ครั้ง</span>
+                            </div>
+                            <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                                <div className="h-full bg-blue-500" style={{ width: '100%' }}></div>
+                            </div>
+                            <p className="text-xs text-gray-400 mt-1 text-right">คะแนนล่าสุด: {myHomeworkLogs[myHomeworkLogs.length-1]?.score || 0}</p>
+                         </div>
+                         
+                         <div>
+                            <div className="flex justify-between text-sm mb-1">
+                                <span className="text-gray-600">ฝึกฝนเองกับ AI</span>
+                                <span className="font-bold text-green-600">{myPracticeLogs.length} ครั้ง</span>
+                            </div>
+                            <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+                                <div className="h-full bg-green-500" style={{ width: '100%' }}></div>
+                            </div>
+                            <p className="text-xs text-gray-400 mt-1 text-right">คะแนนล่าสุด: {myPracticeLogs[myPracticeLogs.length-1]?.score || 0}</p>
+                         </div>
+                    </div>
+                </div>
+
+                <button 
+                    onClick={onLogout} 
+                    className="w-full py-3 bg-red-50 text-red-500 rounded-xl font-bold flex items-center justify-center gap-2 border border-red-100 hover:bg-red-100 transition-colors"
+                >
+                    <LogOut size={18} /> ออกจากระบบ
+                </button>
+            </div>
+        </div>
+      );
+  }
+
+  // =========================================================================================
+  // VIEW: HOME
+  // =========================================================================================
   return (
     <div className="pb-24 font-sarabun bg-slate-50 min-h-screen">
       {/* Thai-Style Header / Hero Section */}
@@ -60,15 +181,6 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ user, onStartGame, onLogout }) 
                     <p className="opacity-80 text-sm text-amber-800 font-semibold">{user.role === 'teacher' ? 'คุณครูคนเก่ง' : `นักเรียนคนเก่ง (Level ${user.level})`}</p>
                 </div>
             </div>
-            
-            <button 
-                onClick={onLogout} 
-                className="bg-white/40 hover:bg-white hover:text-red-500 text-amber-900 border border-white/40 backdrop-blur-sm p-3 rounded-full transition-all shadow-sm active:scale-95" 
-                title="ออกจากระบบ"
-                type="button"
-            >
-                <LogOut size={20} />
-            </button>
         </div>
 
         {/* XP Bar (Only for students) */}
@@ -101,14 +213,14 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ user, onStartGame, onLogout }) 
       </div>
 
       {/* Teacher Assigned Exams */}
-      {savedExams.length > 0 && (
-        <div className="px-6 mb-6">
+      {availableExams.length > 0 && (
+        <div className="px-6 mb-6 animate-fade-in">
           <h2 className="text-lg font-bold text-gray-800 mb-3 flex items-center gap-2">
              <div className="bg-red-100 p-1.5 rounded-lg text-red-500"><Book size={18} className="fill-current" /></div>
-             แบบฝึกทักษะจากครู
+             แบบฝึกทักษะจากครู (ยังไม่ทำ)
           </h2>
           <div className="flex overflow-x-auto gap-4 pb-4 no-scrollbar">
-            {savedExams.map((exam) => (
+            {availableExams.map((exam) => (
               <button
                 key={exam.id}
                 onClick={() => handleExamClick(exam)}
@@ -133,11 +245,11 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ user, onStartGame, onLogout }) 
         </div>
       )}
 
-      {/* AI Generated Topics Grid */}
+      {/* Topics Grid (Pooled from DB) */}
       <div className="px-6 pb-6">
         <h2 className="text-lg font-bold text-gray-800 mb-3 flex items-center gap-2">
           <div className="bg-green-100 p-1.5 rounded-lg text-green-600"><Play size={18} className="fill-current" /></div>
-          ฝึกฝนทั่วไป (AI)
+          ฝึกฝนทั่วไป (Practice)
         </h2>
         
         <div className="grid grid-cols-1 gap-3">
@@ -155,7 +267,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ user, onStartGame, onLogout }) 
               </div>
               <div className="text-left flex-1 relative z-10">
                 <h3 className="font-bold text-gray-800 group-hover:text-blue-700 transition-colors">{topic.name}</h3>
-                <p className="text-xs text-gray-400 mt-0.5">สร้างโจทย์ใหม่ 5 ข้อ</p>
+                <p className="text-xs text-gray-400 mt-0.5">สุ่มแบบฝึกหัด • 5 ข้อ</p>
               </div>
               <div className="bg-gray-50 p-2 rounded-full text-gray-300 group-hover:bg-blue-600 group-hover:text-white transition-all">
                 <Play size={16} className="fill-current ml-0.5" />
@@ -180,20 +292,25 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ user, onStartGame, onLogout }) 
   );
 };
 
-const Navigation: React.FC = () => {
+interface NavigationProps {
+    activeTab: string;
+    setActiveTab: (tab: string) => void;
+}
+
+const Navigation: React.FC<NavigationProps> = ({ activeTab, setActiveTab }) => {
   const navigate = useNavigate();
   const location = useLocation();
 
   if (location.pathname === '/game') return null;
   if (location.pathname.startsWith('/teacher')) return null;
 
-  const isActive = (path: string) => location.pathname === path ? 'text-blue-600 scale-110' : 'text-gray-300';
+  const getTabClass = (tabName: string) => activeTab === tabName ? 'text-blue-600 scale-110' : 'text-gray-300';
 
   return (
-    <div className="fixed bottom-0 left-0 w-full bg-white border-t border-gray-100 px-8 py-3 flex justify-between items-center pb-6 rounded-t-[30px] shadow-[0_-10px_30px_rgba(0,0,0,0.03)] z-40 max-w-md mx-auto right-0 font-sarabun">
-      <button onClick={() => navigate('/')} className={`flex flex-col items-center gap-1 transition-all ${isActive('/')}`}>
-        <div className={`p-2 rounded-xl ${location.pathname === '/' ? 'bg-blue-50' : ''}`}>
-             <Play size={24} strokeWidth={2.5} className={location.pathname === '/' ? 'fill-blue-600' : ''} />
+    <div className="fixed bottom-0 left-0 w-full bg-white border-t border-gray-100 px-8 py-3 flex justify-between items-center pb-6 rounded-t-[30px] shadow-[0_-10px_30px_rgba(0,0,0,0.03)] z-40 max-w-md mx-auto right-0 font-sarabun border-x border-gray-200">
+      <button onClick={() => { setActiveTab('home'); navigate('/'); }} className={`flex flex-col items-center gap-1 transition-all ${getTabClass('home')}`}>
+        <div className={`p-2 rounded-xl ${activeTab === 'home' ? 'bg-blue-50' : ''}`}>
+             <Play size={24} strokeWidth={2.5} className={activeTab === 'home' ? 'fill-blue-600' : ''} />
         </div>
         <span className="text-[10px] font-bold">เล่นเกม</span>
       </button>
@@ -203,9 +320,9 @@ const Navigation: React.FC = () => {
         </div>
         <span className="text-[10px] font-bold">อันดับ</span>
       </button>
-      <button className={`flex flex-col items-center gap-1 transition-all text-gray-300 cursor-not-allowed`}>
-        <div className="p-2">
-            <User size={24} strokeWidth={2.5} />
+      <button onClick={() => setActiveTab('profile')} className={`flex flex-col items-center gap-1 transition-all ${getTabClass('profile')}`}>
+        <div className={`p-2 rounded-xl ${activeTab === 'profile' ? 'bg-blue-50' : ''}`}>
+            <User size={24} strokeWidth={2.5} className={activeTab === 'profile' ? 'fill-blue-600' : ''} />
         </div>
         <span className="text-[10px] font-bold">ฉัน</span>
       </button>
@@ -219,15 +336,33 @@ const App: React.FC = () => {
   const [showGame, setShowGame] = useState(false);
   const [currentTopicName, setCurrentTopicName] = useState('');
   const [currentExamId, setCurrentExamId] = useState<string | undefined>(undefined);
+  
+  // Navigation State
+  const [activeTab, setActiveTab] = useState('home');
+  // Activity Logs for User
+  const [userLogs, setUserLogs] = useState<ActivityLog[]>([]);
+
+  // Fetch logs when user logs in or game finishes to keep state fresh
+  const refreshLogs = async () => {
+    if (!user) return;
+    const logs = await apiGetActivityLogs();
+    setUserLogs(logs);
+  };
+
+  useEffect(() => {
+    if (user) refreshLogs();
+  }, [user]);
 
   const handleLogin = (loggedInUser: UserProfile) => {
     setUser(loggedInUser);
+    setActiveTab('home');
   };
 
   const handleLogout = () => {
     setUser(null);
     setGameQuestions([]);
     setShowGame(false);
+    setUserLogs([]);
   };
 
   const startGame = async (topicName: string, customQuestions?: Question[], examId?: string) => {
@@ -257,10 +392,24 @@ const App: React.FC = () => {
             xp: prev.xp + score,
             streak: prev.streak + 1
         }) : null);
+        
+        // Refresh logs to hide the completed exam immediately if it was homework
+        setTimeout(refreshLogs, 1000);
     }
     setShowGame(false);
     setCurrentExamId(undefined);
   };
+  
+  // Define standardized container for Mobile View (Login & Student)
+  const mobileContainerClass = "min-h-screen bg-slate-50 font-sarabun max-w-md mx-auto shadow-2xl overflow-hidden relative border-x border-gray-200";
+
+  if (!user) {
+    return (
+        <div className={mobileContainerClass}>
+            <LoginScreen onLogin={handleLogin} />
+        </div>
+    );
+  }
 
   const MainLayout = () => {
     const location = useLocation();
@@ -269,16 +418,15 @@ const App: React.FC = () => {
     // Redirect if not teacher
     if (isTeacherMode && user?.role !== 'teacher') {
         // Simple redirect protection
-        // In real app use useEffect to navigate away
     }
 
     const containerClasses = isTeacherMode 
       ? "min-h-screen bg-slate-50 font-sarabun w-full mx-auto" 
-      : "min-h-screen bg-slate-50 font-sarabun max-w-md mx-auto shadow-2xl overflow-hidden relative";
+      : mobileContainerClass;
 
     if (showGame && user) {
       return (
-        <div className="min-h-screen bg-slate-50 font-sarabun max-w-md mx-auto shadow-2xl overflow-hidden relative">
+        <div className={mobileContainerClass}>
             <GameScreen 
             questions={gameQuestions} 
             onComplete={handleGameComplete} 
@@ -291,17 +439,22 @@ const App: React.FC = () => {
     return (
       <div className={containerClasses}>
         <Routes>
-          <Route path="/" element={<HomeScreen user={user!} onStartGame={startGame} onLogout={handleLogout} />} />
+          <Route path="/" element={
+            <HomeScreen 
+                user={user!} 
+                onStartGame={startGame} 
+                onLogout={handleLogout} 
+                activeTab={activeTab}
+                setActiveTab={setActiveTab}
+                logs={userLogs}
+            />
+          } />
           <Route path="/teacher" element={<TeacherDashboard />} />
         </Routes>
-        <Navigation />
+        <Navigation activeTab={activeTab} setActiveTab={setActiveTab} />
       </div>
     );
   };
-
-  if (!user) {
-    return <LoginScreen onLogin={handleLogin} />;
-  }
 
   return (
     <HashRouter>

@@ -1,35 +1,58 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { GameType, Question } from "../types";
 
-// Initialize Gemini AI using the process.env.API_KEY polyfilled by Vite
-const apiKey = process.env.API_KEY || '';
-const ai = new GoogleGenAI({ apiKey });
+// Helper to safely get the API key with priority:
+// 1. Local Storage (User entered in UI)
+// 2. Vite Environment Variable (VITE_API_KEY)
+// 3. Process Environment Polyfill (API_KEY)
+const getApiKey = () => {
+  try {
+    const localKey = localStorage.getItem('THAIQUEST_GEMINI_KEY');
+    if (localKey && localKey.trim().length > 0) return localKey.trim();
+    
+    // Check standard Vite env
+    // Fix: Cast import.meta to any to avoid TS error about env missing
+    const meta = import.meta as any;
+    if (meta && meta.env && meta.env.VITE_API_KEY) {
+      return meta.env.VITE_API_KEY;
+    }
+  } catch (e) {
+    // Ignore errors accessing localStorage/import.meta in restricted environments
+  }
+  
+  return process.env.API_KEY;
+};
 
 // Cache for audio contexts to avoid recreating them
 let audioContext: AudioContext | null = null;
 
 export const generateQuestions = async (topic: string, count: number = 5): Promise<Question[]> => {
-  if (!apiKey) {
-    console.error("API Key is missing! Please check .env file.");
+  const apiKey = getApiKey();
+  
+  // Basic validation
+  if (!apiKey || apiKey === "undefined" || apiKey.includes("API_KEY") || apiKey.length < 10) {
+    console.error("❌ Critical: API Key is missing or invalid.");
     return fallbackQuestions;
   }
 
-  console.log("Generating questions for topic:", topic);
-
-  const model = "gemini-2.5-flash";
-  
-  const systemInstruction = `You are a Thai Language Teacher for Grade 2 students (Prathom 2). 
-  Create engaging quiz questions based on the Thai Core Curriculum. 
-  Focus on the topic provided. 
-  Ensure the language is simple and appropriate for 7-8 year olds.
-  Return strictly JSON.`;
-
-  const prompt = `Create ${count} distinct multiple-choice questions about "${topic}".
-  For 'type', strictly use 'MULTIPLE_CHOICE'.
-  Provide a 'prompt' (the question), 4 'choices', the 'correctAnswer', and a short simple 'explanation' in Thai.
-  `;
-
   try {
+    const ai = new GoogleGenAI({ apiKey });
+    // Using gemini-2.5-flash for speed and JSON capability
+    const model = "gemini-2.5-flash";
+    
+    const systemInstruction = `You are a creative Thai Language Teacher for Grade 2 students. 
+    Create engaging quiz questions based on the Thai Core Curriculum. 
+    Focus on the topic provided. 
+    Ensure the language is simple and appropriate for 7-8 year olds.`;
+
+    const prompt = `Create ${count} distinct multiple-choice questions about "${topic}".
+    Format the output as a valid JSON Array.
+    Each object must have: prompt, choices (array of 4 strings), correctAnswer, and explanation.
+    Explanation must be short and encouraging in Thai.
+    IMPORTANT: Return ONLY the JSON array. Do not wrap in markdown blocks.`;
+
+    console.log(`🤖 Generating questions for topic: ${topic}... (Model: ${model})`);
+
     const response = await ai.models.generateContent({
       model,
       contents: prompt,
@@ -41,8 +64,6 @@ export const generateQuestions = async (topic: string, count: number = 5): Promi
           items: {
             type: Type.OBJECT,
             properties: {
-              id: { type: Type.STRING },
-              type: { type: Type.STRING },
               prompt: { type: Type.STRING },
               choices: { 
                 type: Type.ARRAY,
@@ -50,7 +71,6 @@ export const generateQuestions = async (topic: string, count: number = 5): Promi
               },
               correctAnswer: { type: Type.STRING },
               explanation: { type: Type.STRING },
-              audioText: { type: Type.STRING }
             },
             required: ["prompt", "choices", "correctAnswer", "explanation"]
           }
@@ -58,29 +78,58 @@ export const generateQuestions = async (topic: string, count: number = 5): Promi
       }
     });
 
-    const text = response.text;
-    if (!text) return fallbackQuestions;
+    let text = response.text;
     
-    const data = JSON.parse(text);
-    return data.map((q: any, index: number) => ({
-      ...q,
-      id: `q-${Date.now()}-${index}`,
-      type: GameType.MULTIPLE_CHOICE // Enforce type
-    }));
+    if (!text) {
+        console.warn("⚠️ AI returned empty text.");
+        return fallbackQuestions;
+    }
 
-  } catch (error) {
-    console.error("Error generating questions:", error);
+    // --- SMART JSON PARSING ---
+    // 1. Remove markdown code blocks if present
+    text = text.replace(/```json/g, '').replace(/```/g, '').trim();
+
+    // 2. Find the JSON array brackets (handling cases where AI adds preamble text)
+    const firstBracket = text.indexOf('[');
+    const lastBracket = text.lastIndexOf(']');
+
+    if (firstBracket !== -1 && lastBracket !== -1) {
+        text = text.substring(firstBracket, lastBracket + 1);
+    }
+
+    try {
+        const data = JSON.parse(text);
+        
+        if (!Array.isArray(data)) {
+            console.error("❌ AI returned JSON but it is not an array:", data);
+            return fallbackQuestions;
+        }
+
+        console.log("✅ Questions generated successfully:", data.length);
+
+        return data.map((q: any, index: number) => ({
+            ...q,
+            id: `q-${Date.now()}-${index}`,
+            type: GameType.MULTIPLE_CHOICE
+        }));
+
+    } catch (parseError) {
+        console.error("❌ JSON Parse Error. Raw text from AI:", text);
+        return fallbackQuestions;
+    }
+
+  } catch (error: any) {
+    console.error("❌ API Request Error:", error);
     return fallbackQuestions;
   }
 };
 
 export const playTextToSpeech = async (text: string) => {
-  if (!apiKey) {
-    console.error("API Key missing for TTS");
-    return;
-  }
+  const apiKey = getApiKey();
+  if (!apiKey || apiKey.length < 10) return;
 
   try {
+    const ai = new GoogleGenAI({ apiKey });
     const response = await ai.models.generateContent({
         model: "gemini-2.5-flash-preview-tts",
         contents: {
@@ -90,7 +139,7 @@ export const playTextToSpeech = async (text: string) => {
             responseModalities: ["AUDIO"],
             speechConfig: {
                 voiceConfig: {
-                    prebuiltVoiceConfig: { voiceName: "Puck" } // Adjust voice if needed
+                    prebuiltVoiceConfig: { voiceName: "Puck" }
                 }
             }
         }
@@ -101,6 +150,11 @@ export const playTextToSpeech = async (text: string) => {
 
     if (!audioContext) {
         audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    }
+
+    // Resume context if suspended (browser policy)
+    if (audioContext.state === 'suspended') {
+      await audioContext.resume();
     }
 
     // Decode base64
@@ -122,24 +176,23 @@ export const playTextToSpeech = async (text: string) => {
   }
 };
 
-// Fallback data in case API fails or key is missing
 const fallbackQuestions: Question[] = [
   {
     id: 'f1',
     type: GameType.MULTIPLE_CHOICE,
-    prompt: "คำว่า 'มด' อยู่ในมาตราตัวสะกดใด?",
-    choices: ["แม่ กก", "แม่ กด", "แม่ กบ", "แม่ กง"],
-    correctAnswer: "แม่ กด",
-    explanation: "เพราะ มด อ่านออกเสียงเหมือนมี ด เป็นตัวสะกด",
-    audioText: "มด"
+    prompt: "ข้อใดคือคำในแม่ ก กา? (ระบบใช้โจทย์สำรอง โปรดตรวจสอบ API Key)",
+    choices: ["นก", "ปลา", "มด", "แมว"],
+    correctAnswer: "ปลา",
+    explanation: "เพราะ ปลา ไม่มีตัวสะกด จึงอยู่ในแม่ ก กา",
+    audioText: "ปลา"
   },
   {
     id: 'f2',
     type: GameType.MULTIPLE_CHOICE,
-    prompt: "คำใดเขียนถูกต้อง?",
-    choices: ["บันได", "บรรได", "บันไดย", "บานได"],
-    correctAnswer: "บันได",
-    explanation: "บันได ใช้ บัน ไม้หันอากาศ น หนู",
-    audioText: "บันได"
+    prompt: "คำว่า 'สนุก' อ่านอย่างไร? (ระบบใช้โจทย์สำรอง โปรดตรวจสอบ API Key)",
+    choices: ["สะ-นุก", "สะ-หนุก", "สนุก", "ส-นุก"],
+    correctAnswer: "สะ-หนุก",
+    explanation: "สนุก เป็นอักษรนำ อ่านออกเสียงเหมือนมี ห นำ",
+    audioText: "สนุก"
   }
 ];
