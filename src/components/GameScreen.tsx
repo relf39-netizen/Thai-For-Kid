@@ -31,12 +31,7 @@ const GameScreen: React.FC<GameScreenProps> = ({ questions, onComplete, onExit }
     if (showFeedback) return;
     setSelectedAnswer(choice);
     setShowFeedback(true);
-
-    // Auto-play explanation
-    if (currentQuestion.explanation) {
-        playTextToSpeech(currentQuestion.explanation);
-    }
-
+    if (currentQuestion.explanation) { playTextToSpeech(currentQuestion.explanation); }
     const isCorrect = choice === currentQuestion.correctAnswer;
     if (isCorrect) {
       const points = 10 + (streak * 2);
@@ -56,72 +51,51 @@ const GameScreen: React.FC<GameScreenProps> = ({ questions, onComplete, onExit }
       setShowFeedback(false);
     } else {
       setIsFinished(true);
-      if (correctCount > questions.length / 2) {
-        confetti({ particleCount: 150, spread: 100, origin: { y: 0.6 } });
-      }
+      if (correctCount > questions.length / 2) { confetti({ particleCount: 150, spread: 100, origin: { y: 0.6 } }); }
     }
   };
 
   if (isFinished) {
     const percentage = (correctCount / questions.length) * 100;
-    let message = percentage >= 80 ? "สุดยอดไปเลย!" : percentage >= 50 ? "เก่งมาก!" : "พยายามได้ดีมาก!";
+    let message = percentage >= 80 ? "สุดยอด!" : percentage >= 50 ? "เก่งมาก!" : "พยายามอีกนิด!";
     
     return (
-        <div className="flex flex-col items-center justify-center h-full min-h-[500px] text-center p-6 animate-fade-in">
-            <div className="bg-white p-8 rounded-[40px] shadow-xl border-4 border-blue-100 w-full relative overflow-hidden">
+        <div className="flex flex-col items-center justify-center h-full text-center p-4 animate-fade-in w-full max-w-md mx-auto">
+            <div className="bg-white p-8 rounded-[32px] shadow-xl border-4 border-blue-50 w-full relative overflow-hidden">
                 <div className="relative z-10 mb-6 flex justify-center animate-bounce-slow">
                     <div className="bg-white p-6 rounded-full shadow-lg border-4 border-blue-50">
-                        <Trophy size={64} className="text-yellow-400 drop-shadow-lg" />
+                        <Trophy size={64} className="text-yellow-400 drop-shadow-lg fill-yellow-100" />
                     </div>
                 </div>
-                <h2 className="text-2xl md:text-3xl font-bold text-gray-800 mb-2">{message}</h2>
-                <div className="grid grid-cols-2 gap-4 mb-8">
-                    <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100">
-                        <div className="text-gray-500 text-sm mb-1 font-semibold">คะแนน XP</div>
-                        <div className="text-2xl md:text-3xl font-bold text-blue-600">+{score}</div>
-                    </div>
-                    <div className="bg-green-50 p-4 rounded-2xl border border-green-100">
-                        <div className="text-gray-500 text-sm mb-1 font-semibold">ถูกต้อง</div>
-                        <div className="text-2xl md:text-3xl font-bold text-green-600">{correctCount}/{questions.length}</div>
-                    </div>
+                <h2 className="text-3xl font-black text-slate-800 mb-2">{message}</h2>
+                <div className="grid grid-cols-2 gap-4 mb-6">
+                    <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100"><div className="text-blue-400 text-xs font-black uppercase">XP</div><div className="text-3xl font-black text-blue-600">+{score}</div></div>
+                    <div className="bg-green-50 p-4 rounded-2xl border border-green-100"><div className="text-green-400 text-xs font-black uppercase">ถูก</div><div className="text-3xl font-black text-green-600">{correctCount}<span className="text-lg text-green-400">/{questions.length}</span></div></div>
                 </div>
-                <button onClick={() => onComplete(score)} className="w-full py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-xl font-bold text-xl shadow-lg hover:shadow-xl hover:scale-105 transition-all flex justify-center items-center gap-2">
-                    <Home size={24} /> กลับหน้าหลัก
-                </button>
+                <button onClick={() => onComplete(score)} className="w-full py-4 bg-slate-800 text-white rounded-2xl font-bold text-lg shadow-lg hover:bg-slate-900 transition-all flex justify-center items-center gap-2"><Home size={20} /> กลับหน้าหลัก</button>
             </div>
         </div>
     );
   }
 
-  if (!currentQuestion) return <div className="text-center p-10 text-xl font-bold animate-pulse text-gray-400 flex items-center justify-center h-full">กำลังโหลดคำถาม...</div>;
+  if (!currentQuestion) return <div className="text-center p-10 text-lg font-bold animate-pulse text-gray-400 flex items-center justify-center h-full">กำลังโหลด...</div>;
 
   return (
-    <div className="flex flex-col h-full relative">
-      <div className="p-4 flex-1 overflow-y-auto pb-32">
-          {/* Header */}
-          <div className="flex justify-between items-center mb-6 bg-white p-3 rounded-2xl shadow-sm border border-gray-100">
-            <button onClick={onExit} className="text-red-500 hover:text-red-700 font-bold transition-all text-sm flex items-center gap-1 p-2 bg-red-50 hover:bg-red-100 rounded-lg active:scale-95">
-              <XCircle size={18} /> ออก
-            </button>
-            <div className="flex gap-3">
-              <div className="flex items-center gap-1 px-2 py-1 bg-orange-50 rounded-lg border border-orange-100">
-                  <span className="text-lg">🔥</span> 
-                  <span className="text-orange-700 font-bold">{streak}</span>
-              </div>
-              <div className="flex items-center gap-1 px-2 py-1 bg-blue-50 rounded-lg border border-blue-100">
-                  <span className="text-lg">⭐</span>
-                  <span className="text-blue-700 font-bold">{score}</span>
-              </div>
+    <div className="flex flex-col h-full relative w-full mx-auto">
+      <div className="p-4 flex-1 overflow-y-auto pb-32 no-scrollbar">
+          <div className="flex justify-between items-center mb-4 bg-white p-3 rounded-2xl shadow-sm border border-slate-100">
+            <button onClick={onExit} className="text-red-500 font-bold text-sm flex items-center gap-1 p-2 bg-red-50 rounded-xl"><XCircle size={18} /> ออก</button>
+            <div className="flex gap-2">
+              <div className="flex items-center gap-1 px-3 py-1 bg-orange-50 rounded-xl border border-orange-100"><span className="text-lg">🔥</span><span className="text-orange-700 font-black text-base">{streak}</span></div>
+              <div className="flex items-center gap-1 px-3 py-1 bg-blue-50 rounded-xl border border-blue-100"><span className="text-lg">⭐</span><span className="text-blue-700 font-black text-base">{score}</span></div>
             </div>
           </div>
 
-          {/* Question Card */}
-          <div className="bg-white rounded-[30px] shadow-[0_10px_30px_-10px_rgba(0,0,0,0.1)] p-6 mb-6 relative overflow-hidden border border-gray-100">
-            <div className="absolute top-0 left-0 w-full h-1.5 bg-gray-100"><div className="h-full bg-blue-500 transition-all duration-500 ease-out" style={{ width: `${((currentIndex + 1) / questions.length) * 100}%` }} /></div>
-            
-            <div className="mt-4 mb-8 text-center">
-              <h2 className="text-xl md:text-2xl font-bold text-slate-800 mb-6 leading-relaxed tracking-wide">{currentQuestion.prompt}</h2>
-              <button onClick={() => currentQuestion.audioText ? playTextToSpeech(currentQuestion.audioText) : playTextToSpeech(currentQuestion.prompt)} className="inline-flex items-center gap-2 px-5 py-2 bg-blue-50 text-blue-600 border border-blue-200 rounded-full hover:bg-blue-100 transition-colors font-bold shadow-sm text-sm">
+          <div className="bg-white rounded-[32px] shadow-sm p-6 mb-4 relative overflow-hidden border-2 border-slate-50 min-h-[200px] flex flex-col justify-center">
+            <div className="absolute top-0 left-0 w-full h-2 bg-slate-100"><div className="h-full bg-blue-500 rounded-r-full transition-all duration-500 ease-out" style={{ width: `${((currentIndex + 1) / questions.length) * 100}%` }} /></div>
+            <div className="mt-2 mb-6 text-center">
+              <h2 className="text-2xl md:text-3xl font-black text-slate-800 mb-4 leading-relaxed font-sarabun">{currentQuestion.prompt}</h2>
+              <button onClick={() => currentQuestion.audioText ? playTextToSpeech(currentQuestion.audioText) : playTextToSpeech(currentQuestion.prompt)} className="inline-flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-600 border border-blue-200 rounded-full hover:bg-blue-100 font-bold text-sm">
                 <Volume2 size={18} /> ฟังเสียง
               </button>
             </div>
@@ -130,16 +104,16 @@ const GameScreen: React.FC<GameScreenProps> = ({ questions, onComplete, onExit }
               {currentQuestion.choices?.map((choice, idx) => {
                 let stateClass = "bg-white border-2 border-slate-100 text-slate-600 shadow-sm hover:border-blue-300 hover:bg-blue-50";
                 if (showFeedback) {
-                  if (choice === currentQuestion.correctAnswer) stateClass = "bg-green-100 border-2 border-green-500 text-green-900 shadow-md";
+                  if (choice === currentQuestion.correctAnswer) stateClass = "bg-green-100 border-2 border-green-500 text-green-800 shadow-sm";
                   else if (choice === selectedAnswer) stateClass = "bg-red-50 border-2 border-red-400 text-red-900";
                   else stateClass = "opacity-40 grayscale bg-slate-50 text-slate-400 border-slate-100";
                 }
                 return (
-                  <button key={idx} onClick={() => handleAnswer(choice)} disabled={showFeedback} className={`w-full p-4 rounded-2xl font-bold transition-all duration-200 transform ${showFeedback ? '' : 'active:scale-[0.98]'} ${stateClass} text-left flex justify-between items-center group`}>
-                    <span className="flex-1 text-lg leading-snug break-words pr-2">{choice}</span>
-                    <div className="flex-shrink-0 ml-2">
-                        {showFeedback && choice === currentQuestion.correctAnswer && <CheckCircle className="text-green-600 w-6 h-6 animate-scale-up" />}
-                        {showFeedback && choice === selectedAnswer && choice !== currentQuestion.correctAnswer && <XCircle className="text-red-500 w-6 h-6 animate-scale-up" />}
+                  <button key={idx} onClick={() => handleAnswer(choice)} disabled={showFeedback} className={`w-full p-4 rounded-2xl font-bold transition-all transform ${showFeedback ? '' : 'active:scale-[0.98]'} ${stateClass} text-left flex justify-between items-center group relative overflow-hidden`}>
+                    <span className="flex-1 text-lg leading-snug break-words pr-2 relative z-10">{choice}</span>
+                    <div className="flex-shrink-0 ml-2 relative z-10">
+                        {showFeedback && choice === currentQuestion.correctAnswer && <CheckCircle className="text-green-600 w-6 h-6" />}
+                        {showFeedback && choice === selectedAnswer && choice !== currentQuestion.correctAnswer && <XCircle className="text-red-500 w-6 h-6" />}
                     </div>
                   </button>
                 );
@@ -148,21 +122,18 @@ const GameScreen: React.FC<GameScreenProps> = ({ questions, onComplete, onExit }
           </div>
       </div>
 
-      {/* Feedback Bar - Absolute positioned inside relative container */}
       {showFeedback && (
-        <div className="absolute bottom-0 left-0 w-full p-5 bg-white border-t border-gray-100 shadow-[0_-10px_40px_rgba(0,0,0,0.05)] animate-slide-up z-50 rounded-b-[40px] md:rounded-b-[35px]">
-          <div className="w-full">
-            <div className={`mb-4 p-4 rounded-2xl border flex gap-3 ${selectedAnswer === currentQuestion.correctAnswer ? 'bg-green-50 border-green-200 text-green-900' : 'bg-red-50 border-red-200 text-red-900'}`}>
-              <div className="mt-1">{selectedAnswer === currentQuestion.correctAnswer ? <CheckCircle size={24} /> : <XCircle size={24} />}</div>
+        <div className="absolute bottom-0 left-0 w-full p-4 bg-white border-t border-slate-100 shadow-[0_-10px_40px_rgba(0,0,0,0.1)] animate-slide-up z-50 rounded-t-[32px] pb-6">
+          <div className="w-full max-w-md mx-auto flex flex-col gap-4">
+            <div className={`p-4 rounded-2xl border flex gap-3 items-center w-full ${selectedAnswer === currentQuestion.correctAnswer ? 'bg-green-50 border-green-200 text-green-900' : 'bg-red-50 border-red-200 text-red-900'}`}>
+              <div className="p-2 bg-white rounded-full shadow-sm shrink-0">{selectedAnswer === currentQuestion.correctAnswer ? <CheckCircle size={24} className="text-green-500" /> : <XCircle size={24} className="text-red-500" />}</div>
               <div className="flex-1">
-                 <p className="font-bold text-lg mb-1">{selectedAnswer === currentQuestion.correctAnswer ? 'ถูกต้อง! (Correct)' : 'ยังไม่ถูกนะ (Incorrect)'}</p>
-                 <div className="flex items-start gap-2">
-                    <p className="text-sm opacity-90 font-medium leading-relaxed flex-1">{currentQuestion.explanation}</p>
-                 </div>
+                 <p className="font-black text-lg">{selectedAnswer === currentQuestion.correctAnswer ? 'ถูกต้อง!' : 'ผิดนิดเดียวนะ'}</p>
+                 <p className="text-sm opacity-90 font-medium">{currentQuestion.explanation}</p>
               </div>
             </div>
-            <button onClick={nextQuestion} className={`w-full py-4 rounded-xl font-bold text-lg text-white shadow-lg transition-transform active:scale-95 flex justify-center items-center gap-2 ${selectedAnswer === currentQuestion.correctAnswer ? 'bg-green-500 hover:bg-green-600' : 'bg-slate-800 hover:bg-slate-900'}`}>
-              {currentIndex < questions.length - 1 ? <>ข้อต่อไป <ArrowRight size={20} /></> : <>ดูผลคะแนน <Trophy size={20} /></>}
+            <button onClick={nextQuestion} className={`w-full py-4 rounded-2xl font-black text-xl text-white shadow-lg transition-transform active:scale-95 flex justify-center items-center gap-2 ${selectedAnswer === currentQuestion.correctAnswer ? 'bg-green-500' : 'bg-slate-800'}`}>
+              {currentIndex < questions.length - 1 ? <>ข้อต่อไป <ArrowRight size={20}/></> : <>ดูผลคะแนน <Trophy size={20}/></>}
             </button>
           </div>
         </div>
