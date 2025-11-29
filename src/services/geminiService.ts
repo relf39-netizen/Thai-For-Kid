@@ -20,7 +20,14 @@ const getApiKey = () => {
     // Ignore errors accessing localStorage/import.meta in restricted environments
   }
   
-  return process.env.API_KEY;
+  // Fix: Safe access to process for TypeScript without @types/node
+  try {
+    if (typeof process !== 'undefined') {
+        return (process as any).env?.API_KEY;
+    }
+  } catch (e) {}
+  
+  return undefined;
 };
 
 // Cache for audio contexts to avoid recreating them
